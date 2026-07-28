@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "2026-07-28.1",
+  "curatedAt": "2026-07-28T00:00:00+08:00",
+  "curatedBy": "yuanqi-knowledge-governance",
+  "excludedEntities": [
+    {
+      "entityKey": "Disease:口腔干燥综合征",
+      "title": "口腔干燥综合征",
+      "reason": "已确认会通过低质量旧目录关联污染通用医学检索结果"
+    },
+    {
+      "entityKey": "Drug:复方氯己定含漱液",
+      "title": "复方氯己定含漱液",
+      "reason": "旧目录药物共现关系未经审核，不进入问答检索证据"
+    },
+    {
+      "entityKey": "Drug:玄麦甘桔颗粒",
+      "title": "玄麦甘桔颗粒",
+      "reason": "旧目录药物共现关系未经审核，不进入问答检索证据"
+    }
+  ]
+}

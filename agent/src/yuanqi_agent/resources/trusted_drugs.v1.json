@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "knowledgeVersion": 1,
+  "curatedAt": "2026-07-28T00:00:00+08:00",
+  "curatedBy": "yuanqi-source-backed-starter",
+  "releaseStatus": "SOURCE_BACKED_STARTER",
+  "drugs": [
+    {
+      "name": "二甲双胍",
+      "category": "双胍类口服降糖药",
+      "summary": "属于双胍类口服降糖药，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "胰岛素",
+      "category": "降糖激素类药物",
+      "summary": "属于调节血糖的激素类药物，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "氨氯地平",
+      "category": "钙通道阻滞剂类降压药",
+      "summary": "属于钙通道阻滞剂类降压药，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "缬沙坦",
+      "category": "血管紧张素 II 受体拮抗剂类降压药",
+      "summary": "属于血管紧张素 II 受体拮抗剂（ARB）类降压药，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "氢氯噻嗪",
+      "category": "噻嗪类利尿降压药",
+      "summary": "属于噻嗪类利尿降压药，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "阿司匹林",
+      "category": "抗血小板/解热镇痛药",
+      "summary": "属于抗血小板与解热镇痛类药物，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "阿托伐他汀",
+      "category": "他汀类调脂药",
+      "summary": "属于他汀类调脂药，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "阿莫西林",
+      "category": "青霉素类抗菌药物",
+      "summary": "用于治疗由敏感细菌引起或高度怀疑由敏感细菌引起的感染，不能用于普通病毒感染。",
+      "warnings": [
+        "既往对青霉素发生过敏反应者不能自行使用。",
+        "具体是否适用以及剂量、疗程，需要结合感染部位、年龄、肾功能和医生处方。"
+      ],
+      "sourceTitle": "DailyMed：Amoxicillin 官方药品标签",
+      "sourceUri": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=ecb439f7-434a-4e4c-b899-943d83346f09"
+    },
+    {
+      "name": "氟西汀",
+      "category": "选择性 5-羟色胺再摄取抑制剂类抗抑郁药",
+      "summary": "属于选择性 5-羟色胺再摄取抑制剂（SSRI）类抗抑郁药，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "沙丁胺醇",
+      "category": "短效 β2 受体激动剂类支气管扩张剂",
+      "summary": "属于短效 β2 受体激动剂类支气管扩张剂，收录于世界卫生组织基本药物示范目录。",
+      "warnings": [],
+      "sourceTitle": "WHO Model List of Essential Medicines",
+      "sourceUri": "https://www.who.int/groups/expert-committee-on-selection-and-use-of-essential-medicines/essential-medicines-lists"
+    },
+    {
+      "name": "头孢丙烯分散片",
+      "category": "头孢菌素类抗菌药物",
+      "summary": "用于医生判断为敏感细菌所致或高度怀疑的特定感染，不应仅凭症状自行使用。",
+      "warnings": [
+        "已知对头孢菌素类药物过敏者禁用。",
+        "如有青霉素或其他 β-内酰胺类药物严重过敏史，用药前应主动告知医生。"
+      ],
+      "sourceTitle": "DailyMed：Cefprozil 官方药品标签",
+      "sourceUri": "https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=b9111a81-07c4-4458-b994-a4ad504986d8"
+    }
+  ]
+}

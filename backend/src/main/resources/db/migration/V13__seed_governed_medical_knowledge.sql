@@ -1,0 +1,38 @@
+-- A small, source-backed corpus for trustworthy demonstrations.
+-- The legacy imported graph remains unreviewed and is not indexed.
+INSERT IGNORE INTO knowledge_document
+    (tenant_id, document_key, title, entity_type, content, source_uri, status,
+     knowledge_version, published_at, published_by)
+VALUES
+(1, 'medical:disease:diabetes', '糖尿病', 'Disease',
+'糖尿病是一种慢性疾病，发生于胰腺不能产生足够胰岛素，或身体不能有效利用所产生胰岛素的情况。常见表现可以包括明显口渴、排尿增多、视物模糊、疲劳和非主动体重下降；2型糖尿病也可能长期没有明显症状。长期血糖控制不佳可能损伤心脏和血管、眼、肾、神经和足部。是否患有糖尿病需要依据规范血糖检查并由专业人员结合临床情况判断，不能只凭症状或一次非规范测量确诊。本知识用于一般健康教育，不提供个体诊断、药物选择或剂量建议。',
+'https://www.who.int/news-room/fact-sheets/detail/diabetes',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1),
+(1, 'medical:disease:hypertension', '高血压', 'Disease',
+'高血压是血管内压力持续偏高的慢性状况。多数高血压患者没有明显症状，测量血压是发现高血压的重要方式。血压非常高时可能出现严重头痛、胸痛、头晕、呼吸困难、恶心、呕吐、视力变化或意识混乱。未得到控制的高血压会增加心脏病、脑卒中和肾脏疾病风险。诊断和长期管理需要结合规范重复测量、总体心血管风险及合并疾病。出现极高血压并伴上述危险症状时应立即就医。本知识不替代医生诊断，也不支持自行开始、加量、换用或停用降压药。',
+'https://www.who.int/news-room/fact-sheets/detail/hypertension',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1),
+(1, 'medical:disease:depression', '抑郁症', 'Disease',
+'抑郁症是常见的精神障碍，核心表现包括持续的情绪低落，或长期失去兴趣和愉悦感，且不同于日常短暂的情绪波动。还可能伴随注意力下降、过度内疚或自我价值感低、对未来绝望、睡眠改变、食欲或体重改变、明显疲劳，以及死亡或自杀想法。症状持续时间、严重程度和对学习、工作、家庭生活的影响需要由专业人员综合评估。抑郁症有有效治疗方法。若存在自伤或自杀想法，应立即联系当地急救服务并寻求身边可信人员陪伴。',
+'https://www.who.int/news-room/fact-sheets/detail/depression',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1),
+(1, 'medical:disease:asthma', '哮喘', 'Disease',
+'哮喘是一种可影响儿童和成人的慢性肺部疾病，与气道炎症及气道周围肌肉收紧有关。常见表现包括咳嗽、喘鸣、气短和胸闷，症状可能时轻时重，并可能在夜间、运动时、呼吸道感染期间或接触烟雾、粉尘、花粉等诱因后加重。相似表现也可能由其他疾病引起，因此不能仅凭症状自行确诊。规范评估和治疗能够帮助控制症状并减少严重发作风险。若呼吸困难明显、说话困难、口唇发紫或常用缓解措施无效，应尽快急诊就医。',
+'https://www.who.int/news-room/fact-sheets/detail/asthma',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1),
+(1, 'medical:disease:hepatitis-b', '乙型病毒性肝炎', 'Disease',
+'乙型肝炎是乙型肝炎病毒引起的肝脏感染，可以表现为急性感染或慢性感染。许多新近感染者没有症状；有症状时可能出现皮肤或眼睛发黄、尿色深、明显疲劳、恶心、呕吐和腹痛。部分慢性乙型肝炎患者会进展为肝硬化或肝细胞癌。是否感染以及是否需要治疗不能根据症状判断，需要使用规范的乙肝血清学和病毒学检查，并结合肝功能、肝脏情况及专业评估。乙型肝炎可以通过疫苗预防，本知识不提供个体抗病毒治疗方案。',
+'https://www.who.int/news-room/fact-sheets/detail/hepatitis-b',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1),
+(1, 'medical:disease:hepatitis-c', '丙型病毒性肝炎', 'Disease',
+'丙型肝炎是丙型肝炎病毒引起的肝脏感染，可形成急性或慢性疾病。感染通常经受感染血液传播，许多急性感染者没有明显症状；有症状时可能出现疲劳、食欲下降、恶心、呕吐、腹痛、深色尿、关节痛或黄疸。慢性感染可能在多年后导致严重肝损伤、肝硬化或肝癌。丙肝抗体阳性只表示曾经感染过，还需要核酸检测确认当前感染状态。现有直接抗病毒药物可治愈大多数患者，但具体方案必须由专业人员评估。',
+'https://www.who.int/news-room/fact-sheets/detail/hepatitis-c',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1),
+(1, 'medical:disease:copd', '慢性阻塞性肺疾病', 'Disease',
+'慢性阻塞性肺疾病是一类造成持续气流受限和呼吸问题的慢性肺部疾病，常见表现包括活动后或持续气短、慢性咳嗽以及咳痰。吸烟和长期接触空气污染、职业粉尘或烟雾是重要风险因素。相同症状也可能见于哮喘、心脏疾病和感染，因此不能只凭咳嗽或气短自行判断。临床评估通常需要结合暴露史、症状和肺功能等资料。戒烟、减少有害暴露以及按医生方案治疗有助于减轻症状和降低急性加重风险；突发严重呼吸困难应及时急诊就医。',
+'https://www.who.int/news-room/fact-sheets/detail/chronic-obstructive-pulmonary-disease-(copd)',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1),
+(1, 'medical:disease:cancer', '癌症', 'Disease',
+'癌症是可发生在身体不同部位的一大类疾病，其共同特征是异常细胞失去正常控制、侵入邻近组织，并可能向其他器官转移。癌症并不是单一疾病，不同部位和病理类型的风险因素、筛查方法、检查和治疗差异很大。持续不明原因症状需要专业评估，但任何单一症状都不能直接证明患有癌症。部分癌症可通过减少烟草和酒精暴露、保持健康体重、规律活动、接种适用疫苗及减少致癌暴露降低风险；许多癌症在早期发现并得到适当治疗时有更好的治疗机会。',
+'https://www.who.int/news-room/fact-sheets/detail/cancer',
+'PUBLISHED', 1, CURRENT_TIMESTAMP(6), 1);

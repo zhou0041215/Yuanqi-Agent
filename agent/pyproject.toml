@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yuanqi-agent"
+version = "0.1.0"
+description = "YuanQi FastAPI and LangGraph orchestration service"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "aiosqlite>=0.20,<1",
+  "fastapi>=0.116,<1",
+  "httpx>=0.28,<1",
+  "langgraph>=1.0,<2",
+  "langgraph-checkpoint-sqlite>=3.0,<4",
+  "neo4j>=6.0,<7",
+  "orjson>=3.10,<4",
+  "pypdf>=5.7,<6",
+  "python-multipart>=0.0.20,<1",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+  "qdrant-client>=1.15,<1.16",
+  "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+report-ocr = [
+  "pillow>=11,<12",
+  "pytesseract>=0.3.13,<1",
+]
+dev = [
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.0,<2",
+  "pytest-cov>=6.2,<8",
+  "respx>=0.22,<1",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+yuanqi-agent = "yuanqi_agent.main:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"yuanqi_agent.resources" = ["*.json"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+  "ignore:Payload indexes have no effect in the local Qdrant:UserWarning",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]

@@ -1,0 +1,55 @@
+# Secrets and local configuration. Commit only the checked-in examples.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.run/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Runtime output, logs and local state
+*.log
+*.out
+*.err
+*.pid
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+agent/data/
+agent/src/data/
+_to_delete/
+tmp/
+
+# Python
+agent/.venv/
+agent/build/
+agent/**/__pycache__/
+agent/.pytest_cache/
+agent/.ruff_cache/
+agent/**/.mypy_cache/
+agent/**/*.egg-info/
+*.py[cod]
+
+# Java / Maven
+backend/target/
+**/target/
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/.env.local
+
+# Test and coverage artifacts
+coverage/
+htmlcov/
+.coverage

@@ -1,0 +1,77 @@
+-- 患者表
+CREATE TABLE IF NOT EXISTS patient (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    patient_no      VARCHAR(64)  NOT NULL UNIQUE,
+    name            VARCHAR(200) NOT NULL,
+    gender          VARCHAR(10)  NOT NULL DEFAULT 'UNKNOWN',
+    birth_date      DATE,
+    phone           VARCHAR(32),
+    id_card         VARCHAR(32),
+    address         VARCHAR(500),
+    emergency_contact       VARCHAR(200),
+    emergency_phone         VARCHAR(32),
+    blood_type      VARCHAR(10),
+    allergy_history TEXT,
+    medical_history TEXT,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    owner_id        BIGINT       NOT NULL,
+    department_id   BIGINT       NOT NULL,
+    tenant_id       BIGINT       NOT NULL,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    version         BIGINT       NOT NULL DEFAULT 0,
+    deleted         BOOLEAN      NOT NULL DEFAULT FALSE,
+    INDEX idx_patient_tenant (tenant_id),
+    INDEX idx_patient_owner (owner_id),
+    INDEX idx_patient_department (department_id)
+);
+
+-- 病历表
+CREATE TABLE IF NOT EXISTS medical_record (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    record_no       VARCHAR(64)  NOT NULL UNIQUE,
+    patient_id      BIGINT       NOT NULL,
+    visit_date      DATETIME     NOT NULL,
+    department      VARCHAR(200),
+    doctor_name     VARCHAR(200),
+    chief_complaint TEXT,
+    diagnosis       TEXT,
+    treatment_plan  TEXT,
+    notes           TEXT,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    owner_id        BIGINT       NOT NULL,
+    department_id   BIGINT       NOT NULL,
+    tenant_id       BIGINT       NOT NULL,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    version         BIGINT       NOT NULL DEFAULT 0,
+    deleted         BOOLEAN      NOT NULL DEFAULT FALSE,
+    INDEX idx_record_patient (patient_id),
+    INDEX idx_record_tenant (tenant_id),
+    CONSTRAINT fk_record_patient FOREIGN KEY (patient_id) REFERENCES patient(id)
+);
+
+-- 处方表
+CREATE TABLE IF NOT EXISTS prescription (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    prescription_no VARCHAR(64)  NOT NULL UNIQUE,
+    patient_id      BIGINT       NOT NULL,
+    record_id       BIGINT,
+    doctor_name     VARCHAR(200),
+    prescription_date DATETIME   NOT NULL,
+    diagnosis       TEXT,
+    drugs_json      TEXT         COMMENT 'JSON array of drug items',
+    total_amount    DECIMAL(17,2) DEFAULT 0.00,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    notes           TEXT,
+    owner_id        BIGINT       NOT NULL,
+    department_id   BIGINT       NOT NULL,
+    tenant_id       BIGINT       NOT NULL,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    version         BIGINT       NOT NULL DEFAULT 0,
+    deleted         BOOLEAN      NOT NULL DEFAULT FALSE,
+    INDEX idx_prescription_patient (patient_id),
+    INDEX idx_prescription_tenant (tenant_id),
+    CONSTRAINT fk_prescription_patient FOREIGN KEY (patient_id) REFERENCES patient(id)
+);

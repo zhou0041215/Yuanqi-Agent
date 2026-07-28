@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="https://yuanqi.example/processes">
+    <process id="prescriptionStatusChange" name="Prescription status change approval" isExecutable="true">
+        <startEvent id="start"/>
+        <sequenceFlow id="toApproval" sourceRef="start" targetRef="clinicalApproval"/>
+
+        <userTask id="clinicalApproval"
+                  name="Approve prescription status change"
+                  flowable:assignee="${approverId}"/>
+        <sequenceFlow id="toDecision" sourceRef="clinicalApproval" targetRef="decision"/>
+
+        <exclusiveGateway id="decision" default="rejectedPath"/>
+        <sequenceFlow id="approvedPath" sourceRef="decision" targetRef="applyChange">
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${approved == true}]]></conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="rejectedPath" sourceRef="decision" targetRef="rejected"/>
+
+        <serviceTask id="applyChange"
+                     name="Apply approved prescription status"
+                     flowable:delegateExpression="${applyPrescriptionStatusChangeDelegate}"/>
+        <sequenceFlow id="toApprovedEnd" sourceRef="applyChange" targetRef="approved"/>
+
+        <endEvent id="approved" name="Approved"/>
+        <endEvent id="rejected" name="Rejected"/>
+    </process>
+</definitions>
