@@ -6,7 +6,15 @@
 
 ## 项目预览
 
-![元启医学智能协作台登录页](docs/images/login.png)
+项目演示录屏：[查看 MP4（约 32 MB）](docs/media/yuanqi-product-demo.mp4)
+
+| 登录与安全访问 | 医学智能问答 |
+| --- | --- |
+| ![元启医学智能协作台登录页](docs/images/login-page.png) | ![元启医学智能问答工作台](docs/images/medical-assistant.png) |
+
+| 3D 医学知识图谱 | 关系梳理视图 |
+| --- | --- |
+| ![糖尿病医学知识图谱](docs/images/knowledge-graph.png) | ![糖尿病关系梳理视图](docs/images/relationship-view.png) |
 
 ## 下载项目后能得到什么？
 
