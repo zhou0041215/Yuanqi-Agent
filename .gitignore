@@ -23,7 +23,12 @@ Thumbs.db
 *.sqlite-*
 *.db
 *.db-*
-agent/data/
+# Agent runtime state and local data. The attributed medical catalog is the only
+# checked-in exception; checkpoints and any other local files stay private.
+agent/data/*
+!agent/data/medical.json
+!agent/data/SOURCE.md
+!agent/data/LICENSE-disease-kb.txt
 agent/src/data/
 _to_delete/
 tmp/

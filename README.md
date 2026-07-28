@@ -14,7 +14,7 @@
 - 后端会用 Flyway 自动创建业务表、权限表和少量**无真实患者信息**的演示账号。
 - 可以运行患者、病历、处方、审批、审计、检查报告解读和医学知识图谱界面。
 - 不包含真实患者资料、运行日志、JWT、`.env`、数据库 volume 或 Agent 会话检查点。
-- 不包含完整的医学目录源文件 `agent/data/medical.json`。因此首次启动可正常使用业务界面；若要展示完整疾病图谱，请按“导入医学知识图谱”自行准备合法数据源后导入。
+- 包含用于图谱演示的医学目录 `agent/data/medical.json`。该目录来自第三方开源项目，按 Apache-2.0 许可随仓库分发；来源、使用边界与导入方式见 [`agent/data/SOURCE.md`](agent/data/SOURCE.md)。它不含患者或诊疗业务数据。
 
 ## 项目结构
 
@@ -135,7 +135,7 @@ npm run dev
 
 ## 导入医学知识图谱（可选）
 
-完整疾病目录没有随仓库发布。准备好合法且不含个人信息的数据文件后，将其放入本机的 `agent/data/medical.json`，再执行：
+仓库已随附一份用于图谱演示的医学目录 `agent/data/medical.json`。它来自第三方开源数据集，仅用于学习、检索和界面演示，不能作为诊断、治疗或处方依据；完整来源与许可见 [`agent/data/SOURCE.md`](agent/data/SOURCE.md)。如需替换为其他数据源，请先确认其再发布许可且不含个人信息，再执行：
 
 ```powershell
 Set-Location agent
