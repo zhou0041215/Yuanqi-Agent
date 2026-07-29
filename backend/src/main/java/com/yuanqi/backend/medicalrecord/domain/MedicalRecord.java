@@ -18,9 +18,6 @@ public class MedicalRecord extends AuditedEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
-
     @Column(name = "record_no", nullable = false, unique = true, length = 64)
     private String recordNo;
 
@@ -65,7 +62,6 @@ public class MedicalRecord extends AuditedEntity {
     }
 
     public MedicalRecord(
-            long tenantId,
             String recordNo,
             long patientId,
             LocalDateTime visitDate,
@@ -79,7 +75,6 @@ public class MedicalRecord extends AuditedEntity {
             long ownerId,
             long departmentId
     ) {
-        this.tenantId = tenantId;
         this.recordNo = recordNo;
         this.patientId = patientId;
         this.visitDate = visitDate;
@@ -126,10 +121,6 @@ public class MedicalRecord extends AuditedEntity {
 
     public Long getId() {
         return id;
-    }
-
-    public long getTenantId() {
-        return tenantId;
     }
 
     public String getRecordNo() {

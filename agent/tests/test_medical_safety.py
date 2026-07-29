@@ -7,6 +7,7 @@ from yuanqi_agent.service import (
     _contextualize_message,
     _is_medication_advice,
     _medication_safety_response,
+    _route_by_resolved_entities,
     _route_medical_tool,
     _sanitize_disease_payload,
 )
@@ -16,8 +17,8 @@ class StaticRetriever:
     def __init__(self, items):
         self.items = items
 
-    async def search(self, query: str, tenant_id: int, top_k: int):
-        del query, tenant_id, top_k
+    async def search(self, query: str, top_k: int):
+        del query, top_k
         return self.items
 
 
@@ -110,6 +111,32 @@ def test_common_disease_aliases_route_to_canonical_graph_names() -> None:
         "name": "search_disease",
         "arguments": {"name": "慢性阻塞性肺疾病"},
     }
+
+
+def test_write_intent_is_not_intercepted_by_read_only_keyword_routes() -> None:
+    tools = [
+        {"name": "list_patients"},
+        {"name": "search_disease"},
+        {"name": "create_prescription"},
+    ]
+
+    routed = _route_medical_tool(
+        "为当前患者创建一张演示处方，诊断为高血压",
+        tools,
+    )
+
+    assert routed is None
+    assert (
+        _route_by_resolved_entities(
+            "为当前患者创建一张演示处方，诊断为高血压",
+            {
+                "Disease": ["高血压"],
+                "Symptom": ["医生", "测试"],
+            },
+            tools,
+        )
+        is None
+    )
 
 
 def test_curated_non_diabetes_disease_has_source_backed_sections() -> None:
@@ -211,7 +238,7 @@ async def test_zero_relevance_vector_results_are_rejected() -> None:
         ]),
     )
 
-    result = await hybrid.search("高血压建议吃什么药", tenant_id=1, top_k=8)
+    result = await hybrid.search("高血压建议吃什么药", top_k=8)
 
     assert result.items == []
     assert result.context == ""
@@ -224,7 +251,7 @@ async def test_relevant_hypertension_result_survives_filter() -> None:
         StaticRetriever([candidate("高血压", 0.72)]),
     )
 
-    result = await hybrid.search("高血压建议吃什么药", tenant_id=1, top_k=8)
+    result = await hybrid.search("高血压建议吃什么药", top_k=8)
 
     assert [item.title for item in result.items] == ["高血压"]
     assert result.items[0].metadata["bestRawScore"] == 0.72

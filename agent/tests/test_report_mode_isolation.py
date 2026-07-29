@@ -15,10 +15,13 @@ class FakeJavaClient:
         del authorization, trace_id
         return VerifiedUserContext(
             user_id=1001,
-            tenant_id=1,
             username="doctor",
             data_scope=DataScope.ALL,
             department_ids=[10],
+            display_name="测试医生",
+            clinical_department_id=10,
+            clinical_department_name="内分泌科",
+            role_code="SYSTEM_ADMIN",
             permissions=["knowledge:read"],
         )
 

@@ -55,11 +55,11 @@ public class AccountAuthController {
 
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        var person = people.findAllByTenantIdOrderByDisplayNameAsc(1).stream()
+        var person = people.findAllByOrderByDisplayNameAsc().stream()
                 .filter(candidate -> candidate.getUsername().equals(request.username()))
                 .findFirst()
                 .orElseThrow(() -> BusinessException.forbidden("Invalid username or password"));
-        var account = accounts.findByTenantIdAndUserId(1, person.getUserId())
+        var account = accounts.findByUserId(person.getUserId())
                 .filter(candidate -> "ACTIVE".equals(candidate.getStatus()))
                 .orElseThrow(() -> BusinessException.forbidden("Invalid username or password"));
         if (!"ACTIVE".equals(person.getStatus())
@@ -84,7 +84,6 @@ public class AccountAuthController {
                 .subject(Long.toString(person.getUserId()))
                 .issuedAt(now)
                 .expiresAt(now.plus(8, ChronoUnit.HOURS))
-                .claim("tenant_id", 1)
                 .claim("preferred_username", person.getUsername())
                 .claim("data_scope", person.getDataScope().name())
                 .claim("department_ids", Set.of(person.getDepartmentId()))
@@ -98,7 +97,7 @@ public class AccountAuthController {
     @PostMapping("/change-password")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        UserAccount account = accounts.findByTenantIdAndUserId(user.tenantId(), user.userId())
+        UserAccount account = accounts.findByUserId(user.userId())
                 .orElseThrow(() -> BusinessException.notFound("User account"));
         if (!encoder.matches(request.currentPassword(), account.getPasswordHash())) {
             throw BusinessException.forbidden("Current password is incorrect");

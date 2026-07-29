@@ -2,7 +2,9 @@ import {
   AuditOutlined,
   DeleteOutlined,
   EditOutlined,
+  EnvironmentOutlined,
   FileAddOutlined,
+  MessageOutlined,
   MedicineBoxOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -36,6 +38,8 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 
 import { normalizeAccessToken } from '../api/auth';
+import { toAgentPatientContext } from '../api/patientContext';
+import type { AgentPatientContext } from '../api/types';
 
 interface Envelope<T> { data: T; message: string }
 interface PageData<T> {
@@ -81,6 +85,12 @@ interface Prescription {
 }
 interface PatientWorkspace {
   patient: Patient;
+  responsiblePerson?: {
+    userId: number;
+    displayName: string;
+    departmentName: string;
+    roleCode: string;
+  };
   medicalRecords: MedicalRecord[];
   prescriptions: Prescription[];
 }
@@ -102,11 +112,26 @@ interface ApprovalDraft {
   prescription: Prescription;
   targetStatus: 'DISPENSED' | 'CANCELLED';
 }
+interface ClinicalIdentity {
+  userId: number;
+  displayName: string;
+  clinicalDepartmentId: number;
+  clinicalDepartmentName: string;
+  roleCode: string;
+}
 
 type CreateKind = 'patient' | 'record' | 'prescription';
 const workflowBase = '/api/v1/workflows/prescription-status-changes';
 
-export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
+export function ClinicalWorkspace({
+  accessToken,
+  onOpenAssistant,
+  assistantDisabled = false,
+}: {
+  accessToken: string;
+  onOpenAssistant: (patient: AgentPatientContext) => void;
+  assistantDisabled?: boolean;
+}) {
   const [patients, setPatients] = useState<PageData<Patient> | null>(null);
   const [keyword, setKeyword] = useState('');
   const [page, setPage] = useState(0);
@@ -121,8 +146,12 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
   const [approvers, setApprovers] = useState<WorkflowApprover[]>([]);
   const [activeRequests, setActiveRequests] = useState<WorkflowRequest[]>([]);
   const [approversLoading, setApproversLoading] = useState(false);
+  const [clinicalIdentity, setClinicalIdentity] = useState<ClinicalIdentity | null>(null);
   const [form] = Form.useForm();
   const [approvalForm] = Form.useForm();
+  const canWriteClinicalData = Boolean(
+    clinicalIdentity && clinicalIdentity.roleCode !== 'SYSTEM_ADMIN',
+  );
 
   const request = useCallback(async <T,>(
     path: string,
@@ -158,9 +187,29 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
 
   useEffect(() => { void loadPatients(); }, [loadPatients]);
 
+  useEffect(() => {
+    let active = true;
+    void request<ClinicalIdentity>('/api/v1/auth/context')
+      .then((identity) => { if (active) setClinicalIdentity(identity); })
+      .catch((cause: unknown) => {
+        if (active) message.error(cause instanceof Error ? cause.message : '无法加载当前临床身份');
+      });
+    return () => { active = false; };
+  }, [request]);
+
   const openWorkspace = async (patient: Patient) => {
     setWorkspaceLoading(true);
-    setWorkspace({ patient, medicalRecords: [], prescriptions: [] });
+    setWorkspace({
+      patient,
+      responsiblePerson: {
+        userId: patient.ownerId,
+        displayName: '正在读取负责人…',
+        departmentName: '正在读取科室…',
+        roleCode: 'UNKNOWN',
+      },
+      medicalRecords: [],
+      prescriptions: [],
+    });
     try {
       const [nextWorkspace, requests] = await Promise.all([
         request<PatientWorkspace>(`/api/v1/patients/${patient.id}/workspace`),
@@ -230,36 +279,25 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
   };
 
   const openCreate = (kind: CreateKind) => {
+    if ((kind === 'record' || kind === 'prescription') && !canWriteClinicalData) {
+      message.warning('当前身份不能以医生名义创建病历或处方');
+      return;
+    }
     setEditingPatientId(null);
     form.resetFields();
-    const stamp = Date.now();
     if (kind === 'patient') {
       form.setFieldsValue({
-        patientNo: `P-${stamp}`,
         gender: 'UNKNOWN',
-        status: 'ACTIVE',
-        ownerId: 1001,
-        departmentId: 10,
       });
     } else if (kind === 'record') {
       form.setFieldsValue({
-        recordNo: `MR-${stamp}`,
-        patientId: workspace?.patient.id,
-        visitDate: new Date().toISOString().slice(0, 19),
-        status: 'ACTIVE',
-        ownerId: workspace?.patient.ownerId,
-        departmentId: workspace?.patient.departmentId,
+        visitDate: toLocalDateTimeValue(new Date()),
       });
     } else {
       form.setFieldsValue({
-        prescriptionNo: `RX-${stamp}`,
-        patientId: workspace?.patient.id,
-        prescriptionDate: new Date().toISOString().slice(0, 19),
-        drugsJson: '[]',
+        prescriptionDate: toLocalDateTimeValue(new Date()),
+        drugsJson: '',
         totalAmount: 1,
-        status: 'PENDING',
-        ownerId: workspace?.patient.ownerId,
-        departmentId: workspace?.patient.departmentId,
       });
     }
     setCreateKind(kind);
@@ -273,6 +311,10 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
 
   const submitCreate = async () => {
     const values = await form.validateFields();
+    if ((createKind === 'record' || createKind === 'prescription') && !workspace) {
+      message.error('请先从患者工作台进入病历或处方录入');
+      return;
+    }
     setSubmitting(true);
     try {
       const path = createKind === 'patient'
@@ -283,7 +325,11 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
       await request(path, {
         method: editingPatientId ? 'PATCH' : 'POST',
         headers: { 'Idempotency-Key': crypto.randomUUID() },
-        body: JSON.stringify(values),
+        body: JSON.stringify(
+          createKind === 'record' || createKind === 'prescription'
+            ? { ...values, patientId: workspace?.patient.id }
+            : values,
+        ),
       });
       message.success(editingPatientId ? '患者资料已更新' : createKind === 'patient' ? '患者已创建' : createKind === 'record' ? '病历已创建' : '处方已创建');
       setCreateKind(null);
@@ -340,7 +386,14 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
         </div>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={() => void loadPatients()}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate('patient')}>新建患者</Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={!clinicalIdentity || clinicalIdentity.roleCode === 'SYSTEM_ADMIN'}
+            onClick={() => openCreate('patient')}
+          >
+            登记患者
+          </Button>
         </Space>
       </section>
 
@@ -369,8 +422,8 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
               <Descriptions size="small" column={2} colon={false}>
                 <Descriptions.Item label="性别">{patient.gender}</Descriptions.Item>
                 <Descriptions.Item label="血型">{patient.bloodType || '—'}</Descriptions.Item>
-                <Descriptions.Item label="科室">{patient.departmentId}</Descriptions.Item>
-                <Descriptions.Item label="负责人">{patient.ownerId}</Descriptions.Item>
+                <Descriptions.Item label="出生日期">{patient.birthDate || '未登记'}</Descriptions.Item>
+                <Descriptions.Item label="联系电话">{patient.phone || '未登记'}</Descriptions.Item>
               </Descriptions>
               <div className="patient-card-actions">
                 <Button size="small" onClick={(event) => { event.stopPropagation(); void openWorkspace(patient); }}>查看工作区</Button>
@@ -403,8 +456,15 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
         extra={<Space>
           <Button icon={<ReloadOutlined />} onClick={() => workspace && void openWorkspace(workspace.patient)}>刷新</Button>
           <Button icon={<EditOutlined />} onClick={() => workspace && openPatientEdit(workspace.patient)}>编辑患者</Button>
-          <Button icon={<FileAddOutlined />} onClick={() => openCreate('record')}>新增病历</Button>
-          <Button type="primary" icon={<MedicineBoxOutlined />} onClick={() => openCreate('prescription')}>新增处方</Button>
+          <Button
+            icon={<MessageOutlined />}
+            disabled={assistantDisabled}
+            onClick={() => workspace && onOpenAssistant(toAgentPatientContext(workspace.patient))}
+          >
+            使用助手
+          </Button>
+          <Button disabled={!canWriteClinicalData} icon={<FileAddOutlined />} onClick={() => openCreate('record')}>新增病历</Button>
+          <Button disabled={!canWriteClinicalData} type="primary" icon={<MedicineBoxOutlined />} onClick={() => openCreate('prescription')}>新增处方</Button>
         </Space>}
       >
         <Spin spinning={workspaceLoading}>
@@ -412,8 +472,17 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
             <>
               <Descriptions bordered size="small" column={2}>
                 <Descriptions.Item label="患者编号">{workspace.patient.patientNo}</Descriptions.Item>
+                <Descriptions.Item label="性别 / 出生日期">{workspace.patient.gender} / {workspace.patient.birthDate || '未登记'}</Descriptions.Item>
                 <Descriptions.Item label="状态">{workspace.patient.status}</Descriptions.Item>
                 <Descriptions.Item label="联系电话">{workspace.patient.phone || '—'}</Descriptions.Item>
+                <Descriptions.Item label="患者负责人">
+                  {workspace.responsiblePerson
+                    ? `${workspace.responsiblePerson.displayName} · ${workspace.responsiblePerson.departmentName}`
+                    : `负责人编号 ${workspace.patient.ownerId}`}
+                </Descriptions.Item>
+                <Descriptions.Item label="负责人角色">
+                  {workspace.responsiblePerson ? formatRole(workspace.responsiblePerson.roleCode) : '负责人资料待更新'}
+                </Descriptions.Item>
                 <Descriptions.Item label="过敏史">{workspace.patient.allergyHistory || '无记录'}</Descriptions.Item>
                 <Descriptions.Item label="既往史" span={2}>{workspace.patient.medicalHistory || '无记录'}</Descriptions.Item>
               </Descriptions>
@@ -563,80 +632,156 @@ export function ClinicalWorkspace({ accessToken }: { accessToken: string }) {
         open={Boolean(createKind)}
         title={editingPatientId ? '编辑患者资料' : createKind === 'patient' ? '新建患者' : createKind === 'record' ? '新增病历' : '新增处方'}
         width={680}
-        okText="提交"
+        okText={createKind === 'prescription' ? '确认开具' : editingPatientId ? '保存修改' : '确认创建'}
         cancelText="取消"
         confirmLoading={submitting}
         onCancel={() => { setCreateKind(null); setEditingPatientId(null); }}
         onOk={() => void submitCreate()}
       >
         <Form form={form} layout="vertical">
-          {createKind === 'patient' && <PatientFields />}
-          {createKind === 'record' && <RecordFields />}
-          {createKind === 'prescription' && <PrescriptionFields />}
+          {createKind === 'patient' && <PatientFields identity={clinicalIdentity} editing={Boolean(editingPatientId)} />}
+          {createKind === 'record' && workspace && <RecordFields patient={workspace.patient} identity={clinicalIdentity} />}
+          {createKind === 'prescription' && workspace && <PrescriptionFields patient={workspace.patient} identity={clinicalIdentity} />}
         </Form>
       </Modal>
     </div>
   );
 }
 
-function PatientFields() {
+function PatientFields({ identity, editing }: { identity: ClinicalIdentity | null; editing: boolean }) {
   return <>
+    <ClinicalIdentityPanel
+      identity={identity}
+      assignment={!editing}
+      copy={editing
+        ? '患者归属由系统保留；如需调整，请在人员与授权管理中完成。'
+        : '保存后由系统生成患者编号，并按当前临床人员建立初始归属。'}
+    />
     <div className="form-grid">
-      <Form.Item name="patientNo" label="患者编号" rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item name="name" label="姓名" rules={[{ required: true }]}><Input /></Form.Item>
       <Form.Item name="gender" label="性别" rules={[{ required: true }]}>
         <Select options={[{ value: 'MALE', label: '男' }, { value: 'FEMALE', label: '女' }, { value: 'UNKNOWN', label: '未知' }]} />
       </Form.Item>
       <Form.Item name="birthDate" label="出生日期"><Input type="date" /></Form.Item>
       <Form.Item name="phone" label="联系电话"><Input /></Form.Item>
-      <Form.Item name="bloodType" label="血型"><Input /></Form.Item>
-      <Form.Item name="ownerId" label="负责人 ID" rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
-      <Form.Item name="departmentId" label="科室 ID" rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
+      <Form.Item name="bloodType" label="血型">
+        <Select
+          allowClear
+          options={['A', 'B', 'AB', 'O', 'RH+', 'RH-'].map((value) => ({ value, label: value }))}
+        />
+      </Form.Item>
     </div>
     <Form.Item name="allergyHistory" label="过敏史"><Input.TextArea rows={2} /></Form.Item>
     <Form.Item name="medicalHistory" label="既往史"><Input.TextArea rows={2} /></Form.Item>
-    <Form.Item name="status" hidden><Input /></Form.Item>
   </>;
 }
 
-function RecordFields() {
+function RecordFields({ patient, identity }: { patient: Patient; identity: ClinicalIdentity | null }) {
   return <>
+    <ClinicalIdentityPanel
+      patient={patient}
+      identity={identity}
+      copy="接诊医生与就诊科室会按当前登录身份写入病历，并在服务端再次校验。"
+    />
     <div className="form-grid">
-      <Form.Item name="recordNo" label="病历编号" rules={[{ required: true }]}><Input /></Form.Item>
-      <Form.Item name="patientId" label="患者 ID" rules={[{ required: true }]}><InputNumber disabled /></Form.Item>
       <Form.Item name="visitDate" label="就诊时间" rules={[{ required: true }]}><Input type="datetime-local" /></Form.Item>
-      <Form.Item name="department" label="就诊科室" rules={[{ required: true }]}><Input /></Form.Item>
-      <Form.Item name="doctorName" label="医生" rules={[{ required: true }]}><Input /></Form.Item>
-      <Form.Item name="ownerId" label="负责人 ID" rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
-      <Form.Item name="departmentId" label="科室 ID" rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
     </div>
     <Form.Item name="chiefComplaint" label="主诉"><Input.TextArea rows={2} /></Form.Item>
     <Form.Item name="diagnosis" label="诊断"><Input.TextArea rows={2} /></Form.Item>
     <Form.Item name="treatmentPlan" label="治疗计划"><Input.TextArea rows={2} /></Form.Item>
-    <Form.Item name="status" hidden><Input /></Form.Item>
   </>;
 }
 
-function PrescriptionFields() {
+function PrescriptionFields({ patient, identity }: { patient: Patient; identity: ClinicalIdentity | null }) {
   return <>
+    <ClinicalIdentityPanel
+      patient={patient}
+      identity={identity}
+      copy="处方将以当前登录医生的身份开具；确认后会留下不可抵赖的操作审计。"
+      prescription
+    />
     <div className="form-grid">
-      <Form.Item name="prescriptionNo" label="处方编号" rules={[{ required: true }]}><Input /></Form.Item>
-      <Form.Item name="patientId" label="患者 ID" rules={[{ required: true }]}><InputNumber disabled /></Form.Item>
       <Form.Item name="prescriptionDate" label="开具时间" rules={[{ required: true }]}><Input type="datetime-local" /></Form.Item>
-      <Form.Item name="doctorName" label="医生" rules={[{ required: true }]}><Input /></Form.Item>
-      <Form.Item name="totalAmount" label="总金额" rules={[{ required: true }]}><InputNumber min={0.01} precision={2} /></Form.Item>
-      <Form.Item name="ownerId" label="负责人 ID" rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
-      <Form.Item name="departmentId" label="科室 ID" rules={[{ required: true }]}><InputNumber min={1} /></Form.Item>
+      <Form.Item name="totalAmount" label="总金额" rules={[{ required: true, message: '请输入处方总金额' }]}>
+        <InputNumber min={0.01} precision={2} addonBefore="¥" style={{ width: '100%' }} />
+      </Form.Item>
     </div>
     <Form.Item name="diagnosis" label="诊断"><Input.TextArea rows={2} /></Form.Item>
-    <Form.Item name="drugsJson" label="药品 JSON" rules={[{ required: true }]}><Input.TextArea rows={4} /></Form.Item>
+    <Form.Item
+      name="drugsJson"
+      label="药品信息"
+      rules={[{ required: true, message: '请填写药品信息' }]}
+    >
+      <Input.TextArea
+        rows={4}
+        placeholder={'请填写药品名称、规格、剂量和用法，每种药品一行\n例如：演示药品A，10mg，每日一次'}
+      />
+    </Form.Item>
     <Form.Item name="notes" label="备注"><Input.TextArea rows={2} /></Form.Item>
-    <Form.Item name="status" hidden><Input /></Form.Item>
   </>;
+}
+
+function ClinicalIdentityPanel({
+  patient,
+  identity,
+  copy,
+  prescription = false,
+  assignment = false,
+}: {
+  patient?: Patient;
+  identity: ClinicalIdentity | null;
+  copy: string;
+  prescription?: boolean;
+  assignment?: boolean;
+}) {
+  return (
+    <section
+      className={`clinical-identity-panel${patient ? '' : ' clinical-identity-panel--assignment'}`}
+      aria-label="本次录入上下文"
+    >
+      {patient && (
+        <div className="clinical-identity-panel__patient">
+          <span><UserOutlined /> 当前患者</span>
+          <strong>{patient.name}</strong>
+          <small>{patient.patientNo} · {formatGender(patient.gender)}{patient.birthDate ? ` · ${patient.birthDate}` : ''}</small>
+        </div>
+      )}
+      <div className="clinical-identity-panel__operator">
+        <span><UserOutlined /> {prescription ? '开方医生' : patient ? '接诊医生' : assignment ? '初始负责人' : '当前经办人'}</span>
+        <strong>{identity?.displayName || '正在核验登录身份…'}</strong>
+        <small>{identity ? formatRole(identity.roleCode) : '身份信息加载中'}</small>
+      </div>
+      <div className="clinical-identity-panel__department">
+        <span><EnvironmentOutlined /> 所属科室</span>
+        <strong>{identity?.clinicalDepartmentName || '正在核验科室…'}</strong>
+        <small>由已验证身份自动带入</small>
+      </div>
+      <p>{copy}</p>
+    </section>
+  );
 }
 
 function formatDate(value: string) {
   return value ? new Date(value).toLocaleString('zh-CN') : '—';
+}
+
+function toLocalDateTimeValue(value: Date) {
+  const timezoneOffsetMs = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - timezoneOffsetMs).toISOString().slice(0, 16);
+}
+
+function formatGender(value: string) {
+  return value === 'MALE' ? '男' : value === 'FEMALE' ? '女' : value === 'UNKNOWN' ? '未知' : value || '性别未登记';
+}
+
+function formatRole(value: string) {
+  return value === 'SYSTEM_ADMIN'
+    ? '系统管理员'
+    : value === 'DEPARTMENT_LEAD'
+      ? '科室负责人'
+      : value === 'CLINICAL_COLLABORATOR'
+        ? '临床协作人员'
+        : '已验证临床身份';
 }
 
 async function readError(response: Response) {

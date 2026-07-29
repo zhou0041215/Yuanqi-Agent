@@ -35,7 +35,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { StoredSession } from './storage/sessionStore';
 
-import type { ApprovalUiData } from './api/types';
+import type { AgentPatientContext, ApprovalUiData } from './api/types';
 import { ApprovalCard } from './components/ApprovalCard';
 import { FeedbackActions } from './components/FeedbackActions';
 import { NotificationCenter } from './components/NotificationCenter';
@@ -106,6 +106,7 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false);
   const [sessionQuery, setSessionQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [patientContext, setPatientContext] = useState<AgentPatientContext | null>(null);
   const reportInputRef = useRef<HTMLInputElement>(null);
   const [activeView, setActiveView] = useState<'chat' | 'clinical' | 'kg' | 'knowledge-admin' | 'access' | 'approval'>('chat');
   const {
@@ -137,7 +138,28 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
   const submit = (value: string) => {
     if (!value.trim()) return;
     setInput('');
-    void send(value, conversationMode);
+    void send(
+      value,
+      conversationMode,
+      conversationMode === 'knowledge' ? patientContext ?? undefined : undefined,
+    );
+  };
+
+  const startBlankConversation = () => {
+    if (busy) return;
+    setPatientContext(null);
+    setConversationMode('knowledge');
+    clear();
+  };
+
+  const openPatientAssistant = (context: AgentPatientContext) => {
+    if (busy) return;
+    newSession();
+    setPatientContext(context);
+    setConversationMode('knowledge');
+    setInput('');
+    setSessionPanelOpen(false);
+    setActiveView('chat');
   };
 
   const formatTime = (ts: number) => {
@@ -157,7 +179,7 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
         </div>
         <div className="rail-actions">
           <Tooltip title="新建会话" placement="right">
-            <button className="rail-button" onClick={clear} aria-label="新建会话">
+            <button className="rail-button" onClick={startBlankConversation} aria-label="新建会话">
               <PlusOutlined />
             </button>
           </Tooltip>
@@ -165,7 +187,11 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
             <button
               className={`rail-button ${activeView === 'chat' ? 'rail-button--active' : ''}`}
               aria-label="医学对话"
-              onClick={() => { setActiveView('chat'); setSessionPanelOpen(false); }}
+              onClick={() => {
+                setPatientContext(null);
+                setActiveView('chat');
+                setSessionPanelOpen(false);
+              }}
             >
               <MessageOutlined />
             </button>
@@ -272,7 +298,11 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
-                  onClick={() => { newSession(); setSessionPanelOpen(false); }}
+                  onClick={() => {
+                    setPatientContext(null);
+                    newSession();
+                    setSessionPanelOpen(false);
+                  }}
                 >
                   新建会话
                 </Button>
@@ -282,10 +312,20 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
                 <div
                   key={s.id}
                   className={`session-item ${s.id === currentSessionId ? 'session-item--active' : ''}`}
-                  onClick={() => { switchSession(s.id); setSessionPanelOpen(false); }}
+                  onClick={() => {
+                    setPatientContext(null);
+                    switchSession(s.id);
+                    setSessionPanelOpen(false);
+                  }}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { switchSession(s.id); setSessionPanelOpen(false); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setPatientContext(null);
+                      switchSession(s.id);
+                      setSessionPanelOpen(false);
+                    }
+                  }}
                 >
                   <div className="session-item-content">
                     <span className="session-item-title">{s.title}</span>
@@ -352,7 +392,7 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
               shape="circle"
               icon={<DeleteOutlined />}
               disabled={busy || turns.length === 0}
-              onClick={clear}
+              onClick={startBlankConversation}
               aria-label="清空当前会话"
             />
           </div>
@@ -366,7 +406,11 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
           </div>
         ) : activeView === 'clinical' ? (
           <Suspense fallback={<div className="access-loading">加载患者业务工作台...</div>}>
-            <ClinicalWorkspace accessToken={accessToken} />
+            <ClinicalWorkspace
+              accessToken={accessToken}
+              assistantDisabled={busy}
+              onOpenAssistant={openPatientAssistant}
+            />
           </Suspense>
         ) : activeView === 'knowledge-admin' ? (
           <Suspense fallback={<div className="access-loading">加载知识治理中心...</div>}>
@@ -391,6 +435,7 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
                 }}
                 onSearchKnowledge={() => setKnowledgeOpen(true)}
                 onUploadReport={() => {
+                  setPatientContext(null);
                   setConversationMode('report');
                   reportInputRef.current?.click();
                 }}
@@ -451,8 +496,10 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
                             {turn.uiData?.type === 'approval_card' && (
                               <ApprovalCard
                                 data={turn.uiData}
+                                accessToken={accessToken}
                                 disabled={busy}
                                 decision={turn.approvalDecision}
+                                status={turn.status}
                                 onDecision={(approved, comment) =>
                                   decide(
                                     turn.id,
@@ -491,7 +538,23 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
           <div className="composer-toolbar">
             <div className="composer-context">
               <span className={`context-dot context-dot--${conversationMode}`} />
-              {conversationMode === 'report' ? '检查报告解读' : '医学知识咨询'}
+              {conversationMode === 'report'
+                ? '检查报告解读'
+                : patientContext
+                  ? '患者协作'
+                  : '医学知识咨询'}
+              {conversationMode === 'knowledge' && patientContext && (
+                <Tag
+                  className="composer-patient-tag"
+                  closable={!busy && !waitingApproval}
+                  onClose={(event) => {
+                    event.preventDefault();
+                    setPatientContext(null);
+                  }}
+                >
+                  {patientContext.name} · {patientContext.patientNo}
+                </Tag>
+              )}
             </div>
             <div className="report-upload-row">
               <input
@@ -503,6 +566,7 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
                   const file = event.target.files?.[0];
                   event.target.value = '';
                   if (file) {
+                    setPatientContext(null);
                     setConversationMode('report');
                     void uploadReport(file);
                   }
@@ -513,7 +577,10 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
                 size="small"
                 icon={<PaperClipOutlined />}
                 disabled={busy}
-                onClick={() => reportInputRef.current?.click()}
+                onClick={() => {
+                  setPatientContext(null);
+                  reportInputRef.current?.click();
+                }}
               >
                 上传检查报告
               </Button>
@@ -522,13 +589,17 @@ function CopilotWorkspace({ accessToken, onLock }: { accessToken: string; onLock
             <span className="composer-boundary">
               {conversationMode === 'report'
                 ? '仅使用本次报告与主动补充信息 · 原文件默认不保存'
+                : patientContext
+                  ? '仅操作当前患者 · 医生与科室由服务端身份写入'
                 : '查询医学知识 · 不访问患者数据'}
             </span>
           </div>
           <Sender
             value={input}
             loading={busy}
-            placeholder="描述症状、查询疾病、药物信息或问该挂什么科…"
+            placeholder={patientContext
+              ? `为${patientContext.name}录入病历、开具处方，或查询医学知识…`
+              : '描述症状、查询疾病、药物信息或问该挂什么科…'}
             onChange={setInput}
             onSubmit={submit}
             onCancel={cancel}

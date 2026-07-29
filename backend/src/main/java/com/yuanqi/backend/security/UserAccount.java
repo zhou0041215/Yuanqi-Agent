@@ -13,8 +13,6 @@ public class UserAccount {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(name = "tenant_id")
-    private long tenantId;
     @Column(name = "user_id")
     private long userId;
     @Column(name = "password_hash")

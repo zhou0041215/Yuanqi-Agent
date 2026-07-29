@@ -3,16 +3,19 @@ package com.yuanqi.backend.patient.service;
 import com.yuanqi.backend.common.api.PageResponse;
 import com.yuanqi.backend.common.exception.BusinessException;
 import com.yuanqi.backend.patient.domain.Patient;
+import com.yuanqi.backend.patient.domain.PatientStatus;
 import com.yuanqi.backend.patient.repository.PatientRepository;
 import com.yuanqi.backend.patient.web.dto.CreatePatientRequest;
 import com.yuanqi.backend.patient.web.dto.PatientResponse;
 import com.yuanqi.backend.patient.web.dto.UpdatePatientRequest;
+import com.yuanqi.backend.security.ClinicalIdentityService;
 import com.yuanqi.backend.security.CurrentUserProvider;
-import com.yuanqi.backend.security.RowScopeGuard;
 import com.yuanqi.backend.security.UserContext;
 import java.util.Collection;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -23,16 +26,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class PatientService {
     private final PatientRepository patientRepository;
     private final CurrentUserProvider currentUserProvider;
-    private final RowScopeGuard rowScopeGuard;
+    private final ClinicalIdentityService clinicalIdentityService;
 
     public PatientService(
             PatientRepository patientRepository,
             CurrentUserProvider currentUserProvider,
-            RowScopeGuard rowScopeGuard
+            ClinicalIdentityService clinicalIdentityService
     ) {
         this.patientRepository = patientRepository;
         this.currentUserProvider = currentUserProvider;
-        this.rowScopeGuard = rowScopeGuard;
+        this.clinicalIdentityService = clinicalIdentityService;
     }
 
     @Transactional(readOnly = true)
@@ -40,7 +43,6 @@ public class PatientService {
         UserContext user = currentUserProvider.requireCurrentUser();
         PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<Patient> result = patientRepository.findAccessible(
-                user.tenantId(),
                 user.userId(),
                 user.hasAllAccess(),
                 user.hasSelfAccess(),
@@ -68,13 +70,13 @@ public class PatientService {
     @Transactional
     public PatientResponse create(CreatePatientRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        rowScopeGuard.assertAssignable(user, request.ownerId(), request.departmentId());
-        String patientNo = request.patientNo().trim();
-        if (patientRepository.existsByTenantIdAndPatientNo(user.tenantId(), patientNo)) {
-            throw BusinessException.conflict("Patient number already exists in this tenant");
+        var responsiblePerson = clinicalIdentityService
+                .resolvePatientAssignment(user, request.responsibleUserId());
+        String patientNo = generatedPatientNo();
+        if (patientRepository.existsByPatientNo(patientNo)) {
+            throw BusinessException.conflict("Patient number already exists");
         }
         Patient patient = new Patient(
-                user.tenantId(),
                 patientNo,
                 request.name().trim(),
                 trimToNull(request.gender()),
@@ -87,9 +89,9 @@ public class PatientService {
                 trimToNull(request.bloodType()),
                 trimToNull(request.allergyHistory()),
                 trimToNull(request.medicalHistory()),
-                request.status(),
-                request.ownerId(),
-                request.departmentId()
+                PatientStatus.ACTIVE,
+                responsiblePerson.userId(),
+                responsiblePerson.departmentId()
         );
         return PatientResponse.from(patientRepository.save(patient));
     }
@@ -98,9 +100,6 @@ public class PatientService {
     public PatientResponse update(long id, UpdatePatientRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
         Patient patient = requireWritable(id, user);
-        long ownerId = request.ownerId() == null ? patient.getOwnerId() : request.ownerId();
-        long departmentId = request.departmentId() == null ? patient.getDepartmentId() : request.departmentId();
-        rowScopeGuard.assertAssignable(user, ownerId, departmentId);
         patient.update(
                 request.name() == null ? patient.getName() : request.name().trim(),
                 request.gender() == null ? patient.getGender() : trimToNull(request.gender()),
@@ -114,8 +113,8 @@ public class PatientService {
                 request.allergyHistory() == null ? patient.getAllergyHistory() : trimToNull(request.allergyHistory()),
                 request.medicalHistory() == null ? patient.getMedicalHistory() : trimToNull(request.medicalHistory()),
                 request.status() == null ? patient.getStatus() : request.status(),
-                ownerId,
-                departmentId
+                patient.getOwnerId(),
+                patient.getDepartmentId()
         );
         return PatientResponse.from(patientRepository.saveAndFlush(patient));
     }
@@ -129,7 +128,6 @@ public class PatientService {
     private Patient requireReadable(long id, UserContext user) {
         return patientRepository.findAccessibleById(
                         id,
-                        user.tenantId(),
                         user.userId(),
                         user.hasAllAccess(),
                         user.hasSelfAccess(),
@@ -143,7 +141,6 @@ public class PatientService {
     private Patient requireWritable(long id, UserContext user) {
         return patientRepository.findWritableById(
                         id,
-                        user.tenantId(),
                         user.userId(),
                         user.hasAllAccess(),
                         user.hasSelfAccess(),
@@ -167,5 +164,10 @@ public class PatientService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String generatedPatientNo() {
+        return "P-" + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 14).toUpperCase(Locale.ROOT);
     }
 }

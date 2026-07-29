@@ -26,7 +26,7 @@
 - Generated Python code must pass an AST allowlist/denylist check and execute in Pyodide/WASM or a no-network, resource-limited container.
 - Never expose private chain-of-thought. Stream short user-facing progress summaries under `reasoning`.
 - Java must not build SQL strings manually or call an LLM. Long-running Agent calls use a dedicated executor or reactive I/O, never request-processing threads.
-- Row-level authorization is derived from verified JWT claims and is applied again on every read and write in Java. Client-supplied tenant/user scope is never trusted.
+- This is a single-institution deployment. Row-level authorization is derived from verified JWT user, department, and data-scope claims and is applied again on every read and write in Java. Client-supplied scope is never trusted.
 - Python data analysis consumes only data exported by an authorized Java endpoint. A schema-only response can guide code generation but cannot supply calculation data.
 
 ## Protocol

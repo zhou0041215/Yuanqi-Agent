@@ -17,11 +17,11 @@ class JwtPermissionConverterTest {
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(60))
                 .claim("scope", "profile")
-                .claim("permissions", List.of("customer:read", "order:write"))
+                .claim("permissions", List.of("patient:read", "prescription:write"))
                 .build();
 
         assertThat(new JwtPermissionConverter().convert(jwt))
                 .extracting("authority")
-                .containsExactlyInAnyOrder("SCOPE_profile", "customer:read", "order:write");
+                .containsExactlyInAnyOrder("SCOPE_profile", "patient:read", "prescription:write");
     }
 }

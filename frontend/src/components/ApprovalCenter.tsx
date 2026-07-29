@@ -300,7 +300,7 @@ export function ApprovalCenter({ accessToken }: { accessToken: string }) {
                 type="info"
                 showIcon
                 title="当前账号没有 agent:audit:read 权限"
-                description="工具仍会写入审计台账；只有审计角色可以查看租户内记录。"
+                description="工具仍会写入审计台账；只有审计角色可以查看本院记录。"
               />
             ) : audits.length === 0 ? (
               <Card><Empty description="暂无 Agent 工具审计事件" /></Card>

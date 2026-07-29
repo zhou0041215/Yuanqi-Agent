@@ -15,9 +15,6 @@ public class PatientAccessGrant {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
-
     @Column(name = "patient_id", nullable = false, updatable = false)
     private long patientId;
 
@@ -46,7 +43,6 @@ public class PatientAccessGrant {
     }
 
     public PatientAccessGrant(
-            long tenantId,
             long patientId,
             long granteeUserId,
             long grantedBy,
@@ -54,7 +50,6 @@ public class PatientAccessGrant {
             Instant validFrom,
             Instant validUntil
     ) {
-        this.tenantId = tenantId;
         this.patientId = patientId;
         this.granteeUserId = granteeUserId;
         this.grantedBy = grantedBy;
@@ -69,7 +64,6 @@ public class PatientAccessGrant {
     }
 
     public Long getId() { return id; }
-    public long getTenantId() { return tenantId; }
     public long getPatientId() { return patientId; }
     public long getGranteeUserId() { return granteeUserId; }
     public long getGrantedBy() { return grantedBy; }

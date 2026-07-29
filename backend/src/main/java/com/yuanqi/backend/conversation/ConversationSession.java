@@ -12,8 +12,6 @@ public class ConversationSession {
     @Id
     @Column(length = 64)
     private String id;
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
     @Column(name = "owner_user_id", nullable = false, updatable = false)
     private long ownerUserId;
     @Column(nullable = false, length = 120)
@@ -32,11 +30,10 @@ public class ConversationSession {
     protected ConversationSession() {}
 
     public ConversationSession(
-            String id, long tenantId, long ownerUserId, String title, String turnsJson,
+            String id, long ownerUserId, String title, String turnsJson,
             boolean favorite, boolean archived, Instant createdAt
     ) {
         this.id = id;
-        this.tenantId = tenantId;
         this.ownerUserId = ownerUserId;
         update(title, turnsJson, favorite, archived);
         this.createdAt = createdAt;

@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocument, Long>,
         JpaSpecificationExecutor<KnowledgeDocument> {
-    Optional<KnowledgeDocument> findByIdAndTenantId(long id, long tenantId);
-    boolean existsByTenantIdAndDocumentKey(long tenantId, String documentKey);
-    List<KnowledgeDocument> findAllByTenantIdAndStatusOrderByDocumentKey(long tenantId, String status);
+    boolean existsByDocumentKey(String documentKey);
+    List<KnowledgeDocument> findAllByStatusOrderByDocumentKey(String status);
 }

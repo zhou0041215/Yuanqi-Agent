@@ -10,6 +10,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,6 +40,15 @@ public class AccessManagementController {
             @Valid @RequestBody CreatePatientGrantRequest request
     ) {
         return ApiResponse.success(service.createGrant(request));
+    }
+
+    @PatchMapping("/patients/{id}/assignment")
+    @PreAuthorize("hasAuthority('access:manage')")
+    public ApiResponse<AccessManagementResponse.PatientSummary> updatePatientAssignment(
+            @PathVariable @Positive long id,
+            @Valid @RequestBody UpdatePatientAssignmentRequest request
+    ) {
+        return ApiResponse.success(service.updatePatientAssignment(id, request));
     }
 
     @DeleteMapping("/grants/{id}")

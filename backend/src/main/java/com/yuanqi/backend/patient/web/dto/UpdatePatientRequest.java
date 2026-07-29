@@ -1,7 +1,6 @@
 package com.yuanqi.backend.patient.web.dto;
 
 import com.yuanqi.backend.patient.domain.PatientStatus;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 
@@ -17,8 +16,6 @@ public record UpdatePatientRequest(
         @Size(max = 8) String bloodType,
         String allergyHistory,
         String medicalHistory,
-        PatientStatus status,
-        @Positive Long ownerId,
-        @Positive Long departmentId
+        PatientStatus status
 ) {
 }

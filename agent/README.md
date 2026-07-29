@@ -5,10 +5,12 @@
 ## 请求如何流转？
 
 1. 浏览器请求先进入 Java 后端，Java 验证 JWT。
-2. Java 将当前 JWT 与请求转发到 Agent；Agent 再调用 Java 的 `/api/v1/auth/context` 确认用户、租户、科室和权限。
-3. 读工具可以立即执行；写工具把待执行参数和指纹写入 LangGraph checkpoint 后调用 `interrupt()` 暂停。
-4. 用户在前端批准或驳回后，新的请求携带新的 JWT 恢复流程；恢复时会再次验证身份与权限。
-5. Agent 将 `reasoning`、`text`、`uiData`、`done` 或 `error` 按 SSE 事件流返回。
+2. 从患者工作台进入助手时，Java 先校验当前用户能访问该患者，并用业务库中的患者编号和姓名规范化上下文；浏览器或模型提供的患者归属不受信任。
+3. Java 将当前 JWT 与已验证请求转发到 Agent；Agent 再调用 Java 的 `/api/v1/auth/context` 确认用户、科室和权限。
+4. 病历和处方工具不向模型暴露患者 ID；Agent 将 Java 验证的工作台患者绑定进待审批参数和指纹。
+5. 读工具可以立即执行；写工具把待执行参数和指纹写入 LangGraph checkpoint 后调用 `interrupt()` 暂停。
+6. 用户在前端批准或驳回后，新的请求携带新的 JWT 恢复流程；恢复时会再次验证身份与权限。
+7. Agent 将 `reasoning`、`text`、`uiData`、`done` 或 `error` 按 SSE 事件流返回。
 
 ## 对外接口
 

@@ -4,7 +4,6 @@ import java.util.Set;
 
 public record UserContext(
         long userId,
-        long tenantId,
         String username,
         DataScopeType dataScope,
         Set<Long> departmentIds

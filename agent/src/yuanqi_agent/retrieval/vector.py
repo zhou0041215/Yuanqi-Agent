@@ -23,7 +23,7 @@ class QdrantVectorRetriever:
         self._collection = collection
         self._embedding = embedding
 
-    async def search(self, query: str, tenant_id: int, top_k: int) -> list[RetrievalCandidate]:
+    async def search(self, query: str, top_k: int) -> list[RetrievalCandidate]:
         vector = await self._embedding.embed_query(query)
         excluded_entity_keys = [
             item.entity_key
@@ -36,10 +36,6 @@ class QdrantVectorRetriever:
             # along in the payload so the answer layer labels each result.
             query_filter=models.Filter(
                 must=[
-                    models.FieldCondition(
-                        key="tenant_id",
-                        match=models.MatchValue(value=tenant_id),
-                    ),
                     models.FieldCondition(
                         key="governance_status",
                         match=models.MatchAny(any=sorted(_INDEXABLE_STATUSES)),
@@ -59,8 +55,6 @@ class QdrantVectorRetriever:
         candidates: list[RetrievalCandidate] = []
         for point in response.points:
             payload = dict(point.payload or {})
-            if payload.get("tenant_id") != tenant_id:
-                continue
             document_id = str(payload.get("entity_key") or payload.get("document_id") or point.id)
             title = str(payload.get("title") or "Knowledge document").strip()
             content = str(payload.get("content") or "").strip()
@@ -83,7 +77,7 @@ class QdrantVectorRetriever:
         return {
             key: value
             for key, value in payload.items()
-            if key not in {"content", "tenant_id"} and isinstance(value, str | int | float | bool)
+            if key != "content" and isinstance(value, str | int | float | bool)
         }
 
 
@@ -111,12 +105,6 @@ class QdrantKnowledgeStore:
             )
         info = await self._client.get_collection(self._collection)
         payload_schema = dict(info.payload_schema or {})
-        if "tenant_id" not in payload_schema:
-            await self._client.create_payload_index(
-                collection_name=self._collection,
-                field_name="tenant_id",
-                field_schema=models.PayloadSchemaType.INTEGER,
-            )
         if "governance_status" not in payload_schema:
             await self._client.create_payload_index(
                 collection_name=self._collection,
@@ -130,9 +118,7 @@ class QdrantKnowledgeStore:
                 field_schema=models.PayloadSchemaType.KEYWORD,
             )
 
-    async def upsert_documents(self, tenant_id: int, documents: list[dict[str, Any]]) -> None:
-        if tenant_id <= 0:
-            raise ValueError("tenant_id must be positive")
+    async def upsert_documents(self, documents: list[dict[str, Any]]) -> None:
         texts = [self._document_text(document) for document in documents]
         vectors = await self._embedding.embed_documents(texts)
         points: list[models.PointStruct] = []
@@ -157,10 +143,9 @@ class QdrantKnowledgeStore:
                 raise ValueError("knowledge documents require an HTTPS source")
             points.append(
                 models.PointStruct(
-                    id=str(uuid5(NAMESPACE_URL, f"yuanqi:{tenant_id}:{document_id}")),
+                    id=str(uuid5(NAMESPACE_URL, f"yuanqi:{document_id}")),
                     vector=vector,
                     payload={
-                        "tenant_id": tenant_id,
                         "document_id": document_id,
                         "entity_key": document.get("entity_key", document_id),
                         "title": str(document.get("title") or "Knowledge document"),
@@ -179,16 +164,13 @@ class QdrantKnowledgeStore:
 
     async def replace_documents(
         self,
-        tenant_id: int,
         documents: list[dict[str, Any]],
     ) -> None:
-        """Replace one tenant's active corpus after validating the new corpus.
+        """Replace the single institution's active corpus after validating it.
 
         Validation and embedding happen before deletion, so malformed published
         documents cannot erase the currently active corpus.
         """
-        if tenant_id <= 0:
-            raise ValueError("tenant_id must be positive")
         for document in documents:
             self._document_text(document)
             metadata = dict(document.get("metadata") or {})
@@ -212,10 +194,9 @@ class QdrantKnowledgeStore:
             }
             points.append(
                 models.PointStruct(
-                    id=str(uuid5(NAMESPACE_URL, f"yuanqi:{tenant_id}:{document_id}")),
+                    id=str(uuid5(NAMESPACE_URL, f"yuanqi:{document_id}")),
                     vector=vector,
                     payload={
-                        "tenant_id": tenant_id,
                         "document_id": document_id,
                         "entity_key": document.get("entity_key", document_id),
                         "title": str(document.get("title") or "Knowledge document"),
@@ -229,14 +210,7 @@ class QdrantKnowledgeStore:
         await self._client.delete(
             collection_name=self._collection,
             points_selector=models.FilterSelector(
-                filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="tenant_id",
-                            match=models.MatchValue(value=tenant_id),
-                        )
-                    ]
-                )
+                filter=models.Filter(must=[])
             ),
             wait=True,
         )

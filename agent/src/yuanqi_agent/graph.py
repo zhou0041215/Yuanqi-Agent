@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, Literal
 
 from langgraph.graph import END, START, StateGraph
@@ -98,10 +99,15 @@ def build_agent_graph(registry: ToolRegistry, checkpointer: Any):
             fingerprint=fingerprint,
         )
         try:
+            execution_runtime = (
+                replace(runtime, operation_fingerprint=fingerprint)
+                if definition.access == ToolAccess.WRITE and fingerprint
+                else runtime
+            )
             result = await registry.execute(
                 definition,
                 state["normalized_arguments"],
-                runtime,
+                execution_runtime,
             )
         except Exception:
             await registry.audit(

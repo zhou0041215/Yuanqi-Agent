@@ -15,8 +15,6 @@ public class UserNotification extends AuditedEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
     @Column(name = "recipient_user_id", nullable = false, updatable = false)
     private long recipientUserId;
     @Column(nullable = false, length = 32)
@@ -32,8 +30,7 @@ public class UserNotification extends AuditedEntity {
 
     protected UserNotification() {}
 
-    public UserNotification(long tenantId, long recipientUserId, String type, String title, String content, String targetUrl) {
-        this.tenantId = tenantId;
+    public UserNotification(long recipientUserId, String type, String title, String content, String targetUrl) {
         this.recipientUserId = recipientUserId;
         this.type = type;
         this.title = title;

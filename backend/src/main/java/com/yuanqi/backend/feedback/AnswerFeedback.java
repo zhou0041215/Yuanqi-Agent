@@ -14,8 +14,6 @@ public class AnswerFeedback extends AuditedEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
     @Column(name = "user_id", nullable = false, updatable = false)
     private long userId;
     @Column(nullable = false, length = 200)
@@ -35,9 +33,8 @@ public class AnswerFeedback extends AuditedEntity {
 
     protected AnswerFeedback() {}
 
-    public AnswerFeedback(long tenantId, long userId, String username, String sessionId, String turnId,
+    public AnswerFeedback(long userId, String username, String sessionId, String turnId,
                           String rating, String category, String comment) {
-        this.tenantId = tenantId;
         this.userId = userId;
         this.username = username;
         this.sessionId = sessionId;

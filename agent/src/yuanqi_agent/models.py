@@ -24,10 +24,13 @@ class DataScope(StrEnum):
 
 class VerifiedUserContext(StrictModel):
     user_id: int = Field(gt=0)
-    tenant_id: int = Field(gt=0)
     username: str = Field(min_length=1, max_length=200)
     data_scope: DataScope
     department_ids: list[int] = Field(default_factory=list)
+    display_name: str = Field(min_length=1, max_length=200)
+    clinical_department_id: int = Field(gt=0)
+    clinical_department_name: str = Field(min_length=1, max_length=200)
+    role_code: str = Field(min_length=1, max_length=100)
     permissions: list[str] = Field(default_factory=list)
 
 
@@ -41,12 +44,19 @@ class ToolCall(StrictModel):
     arguments: dict[str, Any]
 
 
+class PatientContext(StrictModel):
+    patient_id: int = Field(gt=0)
+    patient_no: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=200)
+
+
 class AgentRunRequest(StrictModel):
     thread_id: UUID | None = Field(default=None, strict=False)
     mode: Literal["knowledge", "report"] = "knowledge"
     message: str = Field(min_length=1, max_length=20_000)
     history: list[ChatMessage] = Field(default_factory=list, max_length=20)
     tool_call: ToolCall | None = None
+    patient_context: PatientContext | None = None
 
 
 class ApprovalDecision(StrictModel):

@@ -19,9 +19,6 @@ public class Prescription extends AuditedEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
-
     @Column(name = "prescription_no", nullable = false, unique = true, length = 64)
     private String prescriptionNo;
 
@@ -66,7 +63,6 @@ public class Prescription extends AuditedEntity {
     }
 
     public Prescription(
-            long tenantId,
             String prescriptionNo,
             long patientId,
             Long recordId,
@@ -80,7 +76,6 @@ public class Prescription extends AuditedEntity {
             long ownerId,
             long departmentId
     ) {
-        this.tenantId = tenantId;
         this.prescriptionNo = prescriptionNo;
         this.patientId = patientId;
         this.recordId = recordId;
@@ -127,10 +122,6 @@ public class Prescription extends AuditedEntity {
 
     public Long getId() {
         return id;
-    }
-
-    public long getTenantId() {
-        return tenantId;
     }
 
     public String getPrescriptionNo() {

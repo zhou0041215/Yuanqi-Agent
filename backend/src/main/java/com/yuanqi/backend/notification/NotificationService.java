@@ -21,21 +21,20 @@ public class NotificationService {
     @Transactional(readOnly = true)
     public PageResponse<NotificationResponse> list(int page, int size) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        return PageResponse.from(repository.findAllByTenantIdAndRecipientUserIdOrderByCreatedAtDesc(
-                user.tenantId(), user.userId(), PageRequest.of(page, size)), NotificationResponse::from);
+        return PageResponse.from(repository.findAllByRecipientUserIdOrderByCreatedAtDesc(
+                user.userId(), PageRequest.of(page, size)), NotificationResponse::from);
     }
 
     @Transactional(readOnly = true)
     public long unreadCount() {
         UserContext user = currentUserProvider.requireCurrentUser();
-        return repository.countByTenantIdAndRecipientUserIdAndReadAtIsNull(user.tenantId(), user.userId());
+        return repository.countByRecipientUserIdAndReadAtIsNull(user.userId());
     }
 
     @Transactional
     public NotificationResponse markRead(long id) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        UserNotification notification = repository.findByIdAndTenantIdAndRecipientUserId(
-                        id, user.tenantId(), user.userId())
+        UserNotification notification = repository.findByIdAndRecipientUserId(id, user.userId())
                 .orElseThrow(() -> BusinessException.notFound("Notification not found"));
         notification.markRead();
         return NotificationResponse.from(repository.save(notification));
@@ -43,7 +42,6 @@ public class NotificationService {
 
     @Transactional
     public void send(
-            long tenantId,
             long recipientUserId,
             String type,
             String title,
@@ -51,6 +49,6 @@ public class NotificationService {
             String targetUrl
     ) {
         repository.save(new UserNotification(
-                tenantId, recipientUserId, type, title, content, targetUrl));
+                recipientUserId, type, title, content, targetUrl));
     }
 }

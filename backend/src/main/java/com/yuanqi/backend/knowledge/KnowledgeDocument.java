@@ -14,8 +14,6 @@ import java.time.Instant;
 public class KnowledgeDocument extends AuditedEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
     @Column(name = "document_key", nullable = false, length = 128)
     private String documentKey;
     @Column(nullable = false, length = 300)
@@ -36,8 +34,8 @@ public class KnowledgeDocument extends AuditedEntity {
     private Long publishedBy;
 
     protected KnowledgeDocument() {}
-    public KnowledgeDocument(long tenantId, String key, String title, String entityType, String content, String sourceUri) {
-        this.tenantId = tenantId; this.documentKey = key; this.title = title;
+    public KnowledgeDocument(String key, String title, String entityType, String content, String sourceUri) {
+        this.documentKey = key; this.title = title;
         this.entityType = entityType; this.content = content; this.sourceUri = sourceUri;
         this.status = "DRAFT"; this.knowledgeVersion = 1;
     }

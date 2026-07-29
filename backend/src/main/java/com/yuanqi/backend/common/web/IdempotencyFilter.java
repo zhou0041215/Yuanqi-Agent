@@ -168,8 +168,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private String scopedRedisKey(String key) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof JwtAuthenticationToken jwt) {
-            Object tenantId = jwt.getToken().getClaim("tenant_id");
-            return "idempotency:" + tenantId + ":" + jwt.getName() + ":" + key;
+            return "idempotency:" + jwt.getName() + ":" + key;
         }
         return "idempotency:anonymous:" + key;
     }

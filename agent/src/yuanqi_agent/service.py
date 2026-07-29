@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from langgraph.types import Command
 
-from yuanqi_agent.errors import ThreadAccessDeniedError, ThreadConflictError
+from yuanqi_agent.errors import AgentError, ThreadAccessDeniedError, ThreadConflictError
 from yuanqi_agent.graph import first_interrupt_value
 from yuanqi_agent.java_client import JavaApiClient
 from yuanqi_agent.medical_response import (
@@ -21,6 +21,7 @@ from yuanqi_agent.models import (
     AgentExecution,
     AgentRunRequest,
     ApprovalDecision,
+    PatientContext,
     PendingTool,
     RunStatus,
     ToolCall,
@@ -30,6 +31,11 @@ from yuanqi_agent.planner import IntentPlanner
 from yuanqi_agent.runtime import RequestRuntime, reset_runtime, set_runtime
 from yuanqi_agent.sse import encode_sse
 from yuanqi_agent.tools import ToolRegistry
+from yuanqi_agent.write_grounding import (
+    WRITE_TOOL_NAMES,
+    bind_verified_patient_context,
+    ground_natural_write_call,
+)
 
 MAX_MULTI_TURN_ITERATIONS = 10
 LOGGER = logging.getLogger(__name__)
@@ -63,6 +69,7 @@ _MEDICAL_DRUG_KEYWORDS = [
 _MEDICAL_DEPT_KEYWORDS = [
     "挂什么科", "看哪个科", "哪个科", "科室", "门诊",
 ]
+_WRITE_INTENT_MARKERS = ("创建", "新增", "修改", "更新", "删除", "开具", "录入", "变更")
 _MEDICATION_ADVICE_MARKERS = (
     "吃什么药", "吃啥药", "建议吃", "推荐药", "怎么用药", "如何用药",
     "开点药", "用什么药", "服什么药", "有什么药", "吃哪些药", "吃那些药",
@@ -70,10 +77,22 @@ _MEDICATION_ADVICE_MARKERS = (
 )
 
 
+def _has_write_intent(message: str) -> bool:
+    """Return whether the user is asking to mutate business data."""
+    return any(marker in message for marker in _WRITE_INTENT_MARKERS)
+
+
 def _route_medical_tool(message: str, tools: list[dict[str, Any]]) -> dict[str, Any] | None:
     """根据关键词直接路由到医学工具，绕过 planner"""
     available = {t["name"] for t in tools}
     msg = message.strip()
+
+    # Deterministic keyword routes below are read-only. A message such as
+    # "为患者 ID 1 创建一张处方" contains both "患者" and a write intent;
+    # routing it to list_patients would prevent the planner from selecting the
+    # approval-gated create_prescription tool.
+    if _has_write_intent(msg):
+        return None
 
     if any(keyword in msg for keyword in ("病历", "就诊记录")) and "list_medical_records" in available:
         return {"name": "list_medical_records", "arguments": {"keyword": None}}
@@ -159,6 +178,11 @@ def _route_by_resolved_entities(
     tools: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     """Route on entity names actually present in the graph, not a fixed keyword list."""
+    # Entity routes are read-only. Write requests must reach the planner so it can
+    # select an approval-gated business tool such as create_prescription.
+    if _has_write_intent(message):
+        return None
+
     available = {tool["name"] for tool in tools}
     disease = next(iter(entities.get("Disease") or []), None)
     drug = next(iter(entities.get("Drug") or []), None)
@@ -192,9 +216,8 @@ def _fallback_medical_read_tool(
     tools: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     """Use hybrid medical retrieval only for non-mutating requests."""
-    write_markers = ("创建", "新增", "修改", "更新", "删除", "开具", "录入", "变更")
     available = {tool["name"] for tool in tools}
-    if "search_knowledge" in available and not any(marker in message for marker in write_markers):
+    if "search_knowledge" in available and not _has_write_intent(message):
         return {"name": "search_knowledge", "arguments": {"query": message}}
     return None
 
@@ -345,7 +368,7 @@ class LoopEventType(StrEnum):
     REASONING = "reasoning"
     TEXT = "text"
     TOOL_RESULT = "tool_result"
-    APPROVAL = "approval"
+    UI_DATA = "uiData"
     ERROR = "error"
     DONE = "done"
 
@@ -424,6 +447,7 @@ class AgentService:
             request.message,
             [item.model_dump(mode="json") for item in request.history],
             request.tool_call,
+            request.patient_context,
             user,
             authorization,
             trace_id,
@@ -456,9 +480,26 @@ class AgentService:
             if execution.status == RunStatus.REJECTED:
                 yield encode_sse("text", {"text": "操作已驳回，未修改任何业务数据。"})
             elif execution.result is not None:
-                from yuanqi_agent.sse import format_result
+                from yuanqi_agent.sse import format_result, is_confirmed_write_result
 
                 formatted = format_result(execution.tool_name or "", execution.result)
+                if not is_confirmed_write_result(
+                    execution.tool_name or "",
+                    execution.result,
+                ):
+                    yield encode_sse(
+                        "error",
+                        {
+                            "error": {
+                                "code": "UNCONFIRMED_WRITE_RESULT",
+                                "message": (
+                                    "业务写入返回结果缺少必要标识，系统不会显示成功。"
+                                    "请到对应工作台核对实际数据。"
+                                ),
+                            }
+                        },
+                    )
+                    return
                 yield encode_sse(
                     "tool_result",
                     {
@@ -469,7 +510,6 @@ class AgentService:
                         }
                     },
                 )
-                yield encode_sse("text", {"text": formatted})
             yield encode_sse(
                 "done",
                 {"threadId": str(thread_id), "status": execution.status.value},
@@ -487,6 +527,7 @@ class AgentService:
         message: str,
         prior_history: list[dict[str, Any]],
         initial_tool_call: ToolCall | None,
+        patient_context: PatientContext | None,
         user: VerifiedUserContext,
         authorization: str,
         trace_id: str,
@@ -634,7 +675,11 @@ class AgentService:
             routed = None
             route_reason = ""
             entity_routed = False
-            if iteration == 1 and initial_tool_call is None:
+            if (
+                iteration == 1
+                and initial_tool_call is None
+                and not _has_write_intent(message)
+            ):
                 resolved = await registry.resolve_medical_entities(message)
                 if resolved:
                     routed = _route_by_resolved_entities(message, resolved, tools)
@@ -675,6 +720,30 @@ class AgentService:
                         {"reasoning": "模型未选择工具，转为医疗知识混合检索"},
                     )
 
+            if tool_call.name in WRITE_TOOL_NAMES:
+                try:
+                    tool_call = bind_verified_patient_context(
+                        tool_call,
+                        patient_context,
+                    )
+                    if initial_tool_call is None:
+                        tool_call = ground_natural_write_call(
+                            user_question,
+                            tool_call,
+                        )
+                except AgentError as exc:
+                    yield LoopEvent(
+                        LoopEventType.ERROR,
+                        {
+                            "error": {
+                                "code": exc.code,
+                                "message": exc.message,
+                                "details": exc.details,
+                            }
+                        },
+                    )
+                    return
+
             yield LoopEvent(LoopEventType.REASONING, {"reasoning": f"调用工具：{tool_call.name}"})
 
             # ── Execute via graph ──
@@ -687,7 +756,7 @@ class AgentService:
             runtime_token = set_runtime(
                 RequestRuntime(
                     authorization, trace_id, thread_id,
-                    user_id=user.user_id, tenant_id=user.tenant_id,
+                    user_id=user.user_id,
                     department_id=user.department_ids[0] if user.department_ids else None,
                 )
             )
@@ -702,7 +771,7 @@ class AgentService:
                 pending_raw = result.get("pending_tool")
                 pending = PendingTool.model_validate(pending_raw) if pending_raw else None
                 if pending:
-                    yield LoopEvent(LoopEventType.APPROVAL, {
+                    yield LoopEvent(LoopEventType.UI_DATA, {
                         "uiData": {
                             "type": "approval_card",
                             "threadId": thread_id,
@@ -945,7 +1014,6 @@ class AgentService:
                 trace_id,
                 thread_id,
                 user_id=user.user_id,
-                tenant_id=user.tenant_id,
                 department_id=user.department_ids[0] if user.department_ids else None,
             )
         )
@@ -991,11 +1059,10 @@ class AgentService:
                 status_code=403,
             )
         wrong_user = persisted.get("user_id") != current.user_id
-        wrong_tenant = persisted.get("tenant_id") != current.tenant_id
-        if wrong_user or wrong_tenant:
+        if wrong_user:
             raise ThreadAccessDeniedError(
                 "THREAD_ACCESS_DENIED",
-                "Agent thread belongs to another user or tenant",
+                "Agent thread belongs to another user",
                 status_code=403,
             )
 

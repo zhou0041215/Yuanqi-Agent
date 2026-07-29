@@ -6,5 +6,5 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AccessAuditEventRepository extends JpaRepository<AccessAuditEvent, Long> {
-    List<AccessAuditEvent> findAllByTenantIdOrderByOccurredAtDesc(long tenantId, Pageable pageable);
+    List<AccessAuditEvent> findAllByOrderByOccurredAtDesc(Pageable pageable);
 }

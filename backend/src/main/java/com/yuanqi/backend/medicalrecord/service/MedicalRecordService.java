@@ -3,16 +3,20 @@ package com.yuanqi.backend.medicalrecord.service;
 import com.yuanqi.backend.common.api.PageResponse;
 import com.yuanqi.backend.common.exception.BusinessException;
 import com.yuanqi.backend.medicalrecord.domain.MedicalRecord;
+import com.yuanqi.backend.medicalrecord.domain.MedicalRecordStatus;
 import com.yuanqi.backend.medicalrecord.repository.MedicalRecordRepository;
 import com.yuanqi.backend.medicalrecord.web.dto.CreateMedicalRecordRequest;
 import com.yuanqi.backend.medicalrecord.web.dto.MedicalRecordResponse;
 import com.yuanqi.backend.medicalrecord.web.dto.UpdateMedicalRecordRequest;
+import com.yuanqi.backend.patient.service.PatientService;
+import com.yuanqi.backend.security.ClinicalIdentityService;
 import com.yuanqi.backend.security.CurrentUserProvider;
-import com.yuanqi.backend.security.RowScopeGuard;
 import com.yuanqi.backend.security.UserContext;
 import java.util.Collection;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -23,16 +27,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class MedicalRecordService {
     private final MedicalRecordRepository medicalRecordRepository;
     private final CurrentUserProvider currentUserProvider;
-    private final RowScopeGuard rowScopeGuard;
+    private final PatientService patientService;
+    private final ClinicalIdentityService clinicalIdentityService;
 
     public MedicalRecordService(
             MedicalRecordRepository medicalRecordRepository,
             CurrentUserProvider currentUserProvider,
-            RowScopeGuard rowScopeGuard
+            PatientService patientService,
+            ClinicalIdentityService clinicalIdentityService
     ) {
         this.medicalRecordRepository = medicalRecordRepository;
         this.currentUserProvider = currentUserProvider;
-        this.rowScopeGuard = rowScopeGuard;
+        this.patientService = patientService;
+        this.clinicalIdentityService = clinicalIdentityService;
     }
 
     @Transactional(readOnly = true)
@@ -40,7 +47,6 @@ public class MedicalRecordService {
         UserContext user = currentUserProvider.requireCurrentUser();
         PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<MedicalRecord> result = medicalRecordRepository.findAccessible(
-                user.tenantId(),
                 user.userId(),
                 user.hasAllAccess(),
                 user.hasSelfAccess(),
@@ -68,25 +74,25 @@ public class MedicalRecordService {
     @Transactional
     public MedicalRecordResponse create(CreateMedicalRecordRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        rowScopeGuard.assertAssignable(user, request.ownerId(), request.departmentId());
-        String recordNo = request.recordNo().trim();
-        if (medicalRecordRepository.existsByTenantIdAndRecordNo(user.tenantId(), recordNo)) {
-            throw BusinessException.conflict("Record number already exists in this tenant");
+        patientService.assertAccessible(request.patientId());
+        var clinician = clinicalIdentityService.requireClinicalWriter(user);
+        String recordNo = generatedRecordNo();
+        if (medicalRecordRepository.existsByRecordNo(recordNo)) {
+            throw BusinessException.conflict("Record number already exists");
         }
         MedicalRecord medicalRecord = new MedicalRecord(
-                user.tenantId(),
                 recordNo,
                 request.patientId(),
                 request.visitDate(),
-                request.department().trim(),
-                request.doctorName().trim(),
+                clinician.departmentName(),
+                clinician.displayName(),
                 trimToNull(request.chiefComplaint()),
                 trimToNull(request.diagnosis()),
                 trimToNull(request.treatmentPlan()),
                 trimToNull(request.notes()),
-                request.status(),
-                request.ownerId(),
-                request.departmentId()
+                MedicalRecordStatus.ACTIVE,
+                clinician.userId(),
+                clinician.departmentId()
         );
         return MedicalRecordResponse.from(medicalRecordRepository.save(medicalRecord));
     }
@@ -95,21 +101,20 @@ public class MedicalRecordService {
     public MedicalRecordResponse update(long id, UpdateMedicalRecordRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
         MedicalRecord medicalRecord = requireWritable(id, user);
-        long ownerId = request.ownerId() == null ? medicalRecord.getOwnerId() : request.ownerId();
-        long departmentId = request.departmentId() == null ? medicalRecord.getDepartmentId() : request.departmentId();
-        rowScopeGuard.assertAssignable(user, ownerId, departmentId);
+        long patientId = request.patientId() == null ? medicalRecord.getPatientId() : request.patientId();
+        patientService.assertAccessible(patientId);
         medicalRecord.update(
-                request.patientId() == null ? medicalRecord.getPatientId() : request.patientId(),
+                patientId,
                 request.visitDate() == null ? medicalRecord.getVisitDate() : request.visitDate(),
-                request.department() == null ? medicalRecord.getDepartment() : request.department().trim(),
-                request.doctorName() == null ? medicalRecord.getDoctorName() : request.doctorName().trim(),
+                medicalRecord.getDepartment(),
+                medicalRecord.getDoctorName(),
                 request.chiefComplaint() == null ? medicalRecord.getChiefComplaint() : trimToNull(request.chiefComplaint()),
                 request.diagnosis() == null ? medicalRecord.getDiagnosis() : trimToNull(request.diagnosis()),
                 request.treatmentPlan() == null ? medicalRecord.getTreatmentPlan() : trimToNull(request.treatmentPlan()),
                 request.notes() == null ? medicalRecord.getNotes() : trimToNull(request.notes()),
                 request.status() == null ? medicalRecord.getStatus() : request.status(),
-                ownerId,
-                departmentId
+                medicalRecord.getOwnerId(),
+                medicalRecord.getDepartmentId()
         );
         return MedicalRecordResponse.from(medicalRecordRepository.saveAndFlush(medicalRecord));
     }
@@ -123,7 +128,6 @@ public class MedicalRecordService {
     private MedicalRecord requireReadable(long id, UserContext user) {
         return medicalRecordRepository.findAccessibleById(
                         id,
-                        user.tenantId(),
                         user.userId(),
                         user.hasAllAccess(),
                         user.hasSelfAccess(),
@@ -137,7 +141,6 @@ public class MedicalRecordService {
     private MedicalRecord requireWritable(long id, UserContext user) {
         return medicalRecordRepository.findWritableById(
                         id,
-                        user.tenantId(),
                         user.userId(),
                         user.hasAllAccess(),
                         user.hasSelfAccess(),
@@ -161,5 +164,10 @@ public class MedicalRecordService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String generatedRecordNo() {
+        return "MR-" + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 14).toUpperCase(Locale.ROOT);
     }
 }

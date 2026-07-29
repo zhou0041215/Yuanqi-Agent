@@ -78,7 +78,6 @@ interface Props {
 }
 
 interface PatientDraft {
-  patientNo: string;
   name: string;
   gender: string;
   birthDate: string;
@@ -86,7 +85,12 @@ interface PatientDraft {
   bloodType: string;
   allergyHistory: string;
   medicalHistory: string;
-  ownerId?: number;
+  responsibleUserId?: number;
+}
+
+interface ClinicalIdentity {
+  displayName: string;
+  clinicalDepartmentName: string;
 }
 
 interface PatientWorkspace {
@@ -96,7 +100,6 @@ interface PatientWorkspace {
 }
 
 const emptyPatientDraft = (): PatientDraft => ({
-  patientNo: '',
   name: '',
   gender: '',
   birthDate: '',
@@ -170,6 +173,10 @@ export function AccessManagement({ accessToken }: Props) {
   const [creating, setCreating] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<GrantSummary | null>(null);
   const [revoking, setRevoking] = useState(false);
+  const [assignmentTarget, setAssignmentTarget] = useState<PatientSummary | null>(null);
+  const [nextResponsibleUserId, setNextResponsibleUserId] = useState<number>();
+  const [assignmentReason, setAssignmentReason] = useState('');
+  const [updatingAssignment, setUpdatingAssignment] = useState(false);
   const [patientCreateOpen, setPatientCreateOpen] = useState(false);
   const [patientDraft, setPatientDraft] = useState<PatientDraft>(emptyPatientDraft);
   const [creatingPatient, setCreatingPatient] = useState(false);
@@ -177,8 +184,9 @@ export function AccessManagement({ accessToken }: Props) {
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [clinicalEntry, setClinicalEntry] = useState<'record' | 'prescription' | null>(null);
   const [clinicalSaving, setClinicalSaving] = useState(false);
-  const [recordDraft, setRecordDraft] = useState({ visitDate: '', department: '', doctorName: '', chiefComplaint: '', diagnosis: '', treatmentPlan: '', notes: '' });
-  const [prescriptionDraft, setPrescriptionDraft] = useState({ prescriptionDate: '', doctorName: '', diagnosis: '', drugsJson: '', totalAmount: '', notes: '' });
+  const [recordDraft, setRecordDraft] = useState({ visitDate: '', chiefComplaint: '', diagnosis: '', treatmentPlan: '', notes: '' });
+  const [prescriptionDraft, setPrescriptionDraft] = useState({ prescriptionDate: '', diagnosis: '', drugsJson: '', totalAmount: '', notes: '' });
+  const [clinicalIdentity, setClinicalIdentity] = useState<ClinicalIdentity | null>(null);
 
   const loadSnapshot = useCallback(async (signal?: AbortSignal, showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -205,6 +213,18 @@ export function AccessManagement({ accessToken }: Props) {
     return () => controller.abort();
   }, [loadSnapshot]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch('/api/v1/auth/context', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: controller.signal,
+    })
+      .then(readResponse)
+      .then((body) => { if (!controller.signal.aborted) setClinicalIdentity(body.data as ClinicalIdentity); })
+      .catch(() => { if (!controller.signal.aborted) setClinicalIdentity(null); });
+    return () => controller.abort();
+  }, [accessToken]);
+
   const people = snapshot?.people || [];
   const roles = snapshot?.roles || [];
   const patients = snapshot?.patients || [];
@@ -222,12 +242,18 @@ export function AccessManagement({ accessToken }: Props) {
   )).length;
   const closedGrantCount = grants.filter((grant) => grant.status !== 'ACTIVE').length;
   const canPrepareGrant = Boolean(patientId && granteeUserId && reason.trim().length >= 5);
-  const assignedOwner = eligiblePeople.find((person) => person.userId === patientDraft.ownerId);
+  const assignedOwner = eligiblePeople.find((person) => person.userId === patientDraft.responsibleUserId);
+  const nextResponsiblePerson = eligiblePeople.find((person) => person.userId === nextResponsibleUserId);
   const canCreatePatient = Boolean(
-    patientDraft.patientNo.trim()
-    && patientDraft.name.trim()
+    patientDraft.name.trim()
     && patientDraft.gender
-    && patientDraft.ownerId,
+    && patientDraft.responsibleUserId,
+  );
+  const canUpdateAssignment = Boolean(
+    assignmentTarget
+    && nextResponsibleUserId
+    && nextResponsibleUserId !== assignmentTarget.ownerId
+    && assignmentReason.trim().length >= 5,
   );
 
   const createGrant = async () => {
@@ -285,6 +311,35 @@ export function AccessManagement({ accessToken }: Props) {
     }
   };
 
+  const updatePatientAssignment = async () => {
+    if (!assignmentTarget || !nextResponsibleUserId || !canUpdateAssignment) return;
+    setUpdatingAssignment(true);
+    try {
+      const response = await fetch(`/api/v1/access-management/patients/${assignmentTarget.id}/assignment`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': `patient-assignment-${crypto.randomUUID()}`,
+        },
+        body: JSON.stringify({
+          responsibleUserId: nextResponsibleUserId,
+          reason: assignmentReason.trim(),
+        }),
+      });
+      await readResponse(response);
+      setAssignmentTarget(null);
+      setNextResponsibleUserId(undefined);
+      setAssignmentReason('');
+      await loadSnapshot();
+      messageApi.success('患者负责人已移交');
+    } catch (reasonValue) {
+      messageApi.error(reasonValue instanceof Error ? reasonValue.message : '无法调整患者负责人');
+    } finally {
+      setUpdatingAssignment(false);
+    }
+  };
+
   const createPatient = async () => {
     if (!canCreatePatient || !assignedOwner) return;
     setCreatingPatient(true);
@@ -297,7 +352,6 @@ export function AccessManagement({ accessToken }: Props) {
           'Idempotency-Key': `patient-create-${crypto.randomUUID()}`,
         },
         body: JSON.stringify({
-          patientNo: patientDraft.patientNo.trim(),
           name: patientDraft.name.trim(),
           gender: patientDraft.gender,
           birthDate: patientDraft.birthDate || null,
@@ -305,9 +359,7 @@ export function AccessManagement({ accessToken }: Props) {
           bloodType: patientDraft.bloodType || null,
           allergyHistory: patientDraft.allergyHistory.trim() || null,
           medicalHistory: patientDraft.medicalHistory.trim() || null,
-          status: 'ACTIVE',
-          ownerId: assignedOwner.userId,
-          departmentId: assignedOwner.departmentId,
+          responsibleUserId: assignedOwner.userId,
         }),
       });
       await readResponse(response);
@@ -346,32 +398,27 @@ export function AccessManagement({ accessToken }: Props) {
     const patient = workspacePatient.patient;
     const isRecord = clinicalEntry === 'record';
     const valid = isRecord
-      ? Boolean(recordDraft.visitDate && recordDraft.department.trim() && recordDraft.doctorName.trim())
-      : Boolean(prescriptionDraft.prescriptionDate && prescriptionDraft.doctorName.trim() && Number(prescriptionDraft.totalAmount) > 0);
+      ? Boolean(recordDraft.visitDate)
+      : Boolean(prescriptionDraft.prescriptionDate && prescriptionDraft.drugsJson.trim() && Number(prescriptionDraft.totalAmount) > 0);
     if (!valid) return;
     setClinicalSaving(true);
     try {
-      const now = Date.now();
       const body = isRecord ? {
-        recordNo: `MR-${now}`, patientId: patient.id, visitDate: recordDraft.visitDate,
-        department: recordDraft.department.trim(), doctorName: recordDraft.doctorName.trim(),
+        patientId: patient.id, visitDate: recordDraft.visitDate,
         chiefComplaint: recordDraft.chiefComplaint.trim() || null, diagnosis: recordDraft.diagnosis.trim() || null,
         treatmentPlan: recordDraft.treatmentPlan.trim() || null, notes: recordDraft.notes.trim() || null,
-        status: 'ACTIVE', ownerId: patient.ownerId, departmentId: patient.departmentId,
       } : {
-        prescriptionNo: `RX-${now}`, patientId: patient.id, recordId: null,
-        doctorName: prescriptionDraft.doctorName.trim(), prescriptionDate: prescriptionDraft.prescriptionDate,
+        patientId: patient.id, recordId: null, prescriptionDate: prescriptionDraft.prescriptionDate,
         diagnosis: prescriptionDraft.diagnosis.trim() || null, drugsJson: prescriptionDraft.drugsJson.trim() || null,
-        totalAmount: Number(prescriptionDraft.totalAmount), status: 'PENDING', notes: prescriptionDraft.notes.trim() || null,
-        ownerId: patient.ownerId, departmentId: patient.departmentId,
+        totalAmount: Number(prescriptionDraft.totalAmount), notes: prescriptionDraft.notes.trim() || null,
       };
       const response = await fetch(isRecord ? '/api/v1/medical-records' : '/api/v1/prescriptions', {
         method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Idempotency-Key': `clinical-${clinicalEntry}-${crypto.randomUUID()}` }, body: JSON.stringify(body),
       });
       await readResponse(response);
       setClinicalEntry(null);
-      setRecordDraft({ visitDate: '', department: '', doctorName: '', chiefComplaint: '', diagnosis: '', treatmentPlan: '', notes: '' });
-      setPrescriptionDraft({ prescriptionDate: '', doctorName: '', diagnosis: '', drugsJson: '', totalAmount: '', notes: '' });
+      setRecordDraft({ visitDate: '', chiefComplaint: '', diagnosis: '', treatmentPlan: '', notes: '' });
+      setPrescriptionDraft({ prescriptionDate: '', diagnosis: '', drugsJson: '', totalAmount: '', notes: '' });
       await refreshWorkspace();
       messageApi.success(isRecord ? '就诊记录已创建' : '处方已创建');
     } catch (reasonValue) {
@@ -445,7 +492,7 @@ export function AccessManagement({ accessToken }: Props) {
 
           <div className="access-patient-rule" role="note">
             <SafetyCertificateOutlined />
-            <span>负责人只能从“人员管理”中的启用成员选择；平台外人员不能被设置为负责人，也不能获得患者授权。</span>
+            <span>患者归属由负责人和所属科室共同确定。负责人及其数据范围可访问；跨范围协作须经有效临时授权。</span>
           </div>
 
           <div className="access-section-heading access-patient-list-heading">
@@ -457,18 +504,36 @@ export function AccessManagement({ accessToken }: Props) {
           ) : (
             <div className="access-table-wrap">
               <table className="access-table access-table--patients">
-                <thead><tr><th>患者</th><th>负责人员</th><th>所属科室</th><th>状态</th><th>访问说明</th><th>操作</th></tr></thead>
+                <thead><tr><th>患者</th><th>患者负责人</th><th>诊疗状态</th><th>协作权限</th><th>操作</th></tr></thead>
                 <tbody>{patients.map((patient) => {
                   const owner = people.find((person) => person.userId === patient.ownerId);
                   const patientStatus = patient.status || 'ACTIVE';
+                  const ownerNeedsTransfer = owner?.roleCode === 'SYSTEM_ADMIN';
                   return (
                     <tr key={patient.id}>
                       <td><strong>{patient.name}</strong><span>{patient.patientNo}</span></td>
-                      <td><strong>{owner?.displayName || '未分配'}</strong><span>{owner?.username || '—'}</span></td>
-                      <td>{owner?.departmentName || `科室 ${patient.departmentId}`}</td>
+                      <td className="access-patient-owner">
+                        <strong>{owner?.displayName || '未分配'}</strong>
+                        <span>{owner ? `${owner.departmentName} · ${roleLabels[owner.roleCode] || owner.roleCode}` : '请在人员管理中分配负责人'}</span>
+                        {ownerNeedsTransfer && <em>系统管理员不能担任患者负责人，请移交</em>}
+                      </td>
                       <td><Tag className={`access-patient-status access-patient-status--${patientStatus.toLowerCase()}`}>{patientStatusLabels[patientStatus] || patientStatus}</Tag></td>
-                      <td className="access-patient-access-copy">负责人及其数据范围可访问；其他平台人员须经有效临时授权。</td>
-                      <td><Button type="text" size="small" icon={<EyeOutlined />} loading={workspaceLoading} onClick={() => void openPatientWorkspace(patient.id)}>查看详情</Button></td>
+                      <td><span className="access-patient-collaboration">跨范围需临时授权</span></td>
+                      <td>
+                        <Button type="text" size="small" icon={<EyeOutlined />} loading={workspaceLoading} onClick={() => void openPatientWorkspace(patient.id)}>查看详情</Button>
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<UserSwitchOutlined />}
+                          onClick={() => {
+                            setAssignmentTarget(patient);
+                            setNextResponsibleUserId(undefined);
+                            setAssignmentReason('');
+                          }}
+                        >
+                          移交负责人
+                        </Button>
+                      </td>
                     </tr>
                   );
                 })}</tbody>
@@ -647,6 +712,54 @@ export function AccessManagement({ accessToken }: Props) {
       </Modal>
 
       <Modal
+        title="移交患者负责人"
+        open={Boolean(assignmentTarget)}
+        okText="确认移交"
+        cancelText="取消"
+        okButtonProps={{ disabled: !canUpdateAssignment }}
+        confirmLoading={updatingAssignment}
+        onOk={() => void updatePatientAssignment()}
+        onCancel={() => {
+          if (!updatingAssignment) {
+            setAssignmentTarget(null);
+            setNextResponsibleUserId(undefined);
+            setAssignmentReason('');
+          }
+        }}
+      >
+        <div className="access-assignment-form">
+          <p>患者 <strong>{assignmentTarget?.name} · {assignmentTarget?.patientNo}</strong> 的长期归属将随负责人同步至其已备案科室。</p>
+          <label>
+            <span>新负责人</span>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择启用的临床人员"
+              value={nextResponsibleUserId}
+              options={eligiblePeople
+                .filter((person) => person.userId !== assignmentTarget?.ownerId)
+                .map((person) => ({
+                  value: person.userId,
+                  label: `${person.displayName} · ${person.departmentName} · ${roleLabels[person.roleCode] || person.roleCode}`,
+                }))}
+              onChange={setNextResponsibleUserId}
+            />
+            {nextResponsiblePerson && <small>移交后归属科室：{nextResponsiblePerson.departmentName}</small>}
+          </label>
+          <label>
+            <span>移交原因</span>
+            <Input.TextArea
+              autoSize={{ minRows: 2, maxRows: 4 }}
+              maxLength={500}
+              placeholder="至少 5 个字符，记录负责人调整原因"
+              value={assignmentReason}
+              onChange={(event) => setAssignmentReason(event.target.value)}
+            />
+          </label>
+        </div>
+      </Modal>
+
+      <Modal
         title="添加患者"
         open={patientCreateOpen}
         okText="确认添加患者"
@@ -663,16 +776,7 @@ export function AccessManagement({ accessToken }: Props) {
         width={720}
       >
         <div className="patient-create-form">
-          <p className="patient-create-lead">登记后请在“患者授权”中为跨科协作人员创建有时效的读取授权。</p>
-          <label>
-            <span>患者编号 <b>*</b></span>
-            <Input
-              value={patientDraft.patientNo}
-              maxLength={64}
-              placeholder="例如：PT-20260726-001"
-              onChange={(event) => setPatientDraft((draft) => ({ ...draft, patientNo: event.target.value }))}
-            />
-          </label>
+          <p className="patient-create-lead">患者编号会在保存后生成。初始归属按所选人员的已备案科室确定；跨科协作请在“患者授权”中创建有时效的读取授权。</p>
           <label>
             <span>姓名 <b>*</b></span>
             <Input
@@ -683,15 +787,15 @@ export function AccessManagement({ accessToken }: Props) {
             />
           </label>
           <label>
-            <span>负责人 <b>*</b></span>
+            <span>初始负责人 <b>*</b></span>
             <Select
               placeholder="选择平台内启用人员"
-              value={patientDraft.ownerId}
+              value={patientDraft.responsibleUserId}
               options={eligiblePeople.map((person) => ({
                 value: person.userId,
                 label: `${person.displayName} · ${person.departmentName}`,
               }))}
-              onChange={(ownerId) => setPatientDraft((draft) => ({ ...draft, ownerId }))}
+              onChange={(responsibleUserId) => setPatientDraft((draft) => ({ ...draft, responsibleUserId }))}
             />
             {assignedOwner && <small>将归属至：{assignedOwner.departmentName}</small>}
           </label>
@@ -701,7 +805,7 @@ export function AccessManagement({ accessToken }: Props) {
               allowClear
               placeholder="未填写"
               value={patientDraft.gender || undefined}
-              options={[{ value: '男', label: '男' }, { value: '女', label: '女' }, { value: '其他', label: '其他' }]}
+              options={[{ value: 'MALE', label: '男' }, { value: 'FEMALE', label: '女' }, { value: 'UNKNOWN', label: '未知' }]}
               onChange={(gender) => setPatientDraft((draft) => ({ ...draft, gender: gender || '' }))}
             />
           </label>
@@ -796,7 +900,7 @@ export function AccessManagement({ accessToken }: Props) {
       <Modal
         title={clinicalEntry === 'record' ? '新增就诊记录' : '新增处方'}
         open={Boolean(clinicalEntry)}
-        okText={clinicalEntry === 'record' ? '确认创建就诊记录' : '确认创建处方'}
+        okText={clinicalEntry === 'record' ? '确认创建就诊记录' : '确认开具'}
         cancelText="取消"
         confirmLoading={clinicalSaving}
         onOk={() => void createClinicalEntry()}
@@ -805,9 +909,16 @@ export function AccessManagement({ accessToken }: Props) {
       >
         {clinicalEntry === 'record' ? (
           <div className="clinical-entry-form">
+            <div className="clinical-entry-identity clinical-entry-form__wide">
+              <div className="clinical-entry-identity__heading">本次操作</div>
+              <div className="clinical-entry-identity__details">
+                <div><span>患者</span><strong>{workspacePatient?.patient.name} · {workspacePatient?.patient.patientNo}</strong></div>
+                <div><span>接诊医生</span><strong>{clinicalIdentity?.displayName || '正在核验登录身份…'}</strong></div>
+                <div><span>就诊科室</span><strong>{clinicalIdentity?.clinicalDepartmentName || '正在核验科室…'}</strong></div>
+              </div>
+              <small>接诊医生和就诊科室由已验证身份自动写入。</small>
+            </div>
             <label><span>就诊时间 *</span><Input type="datetime-local" value={recordDraft.visitDate} onChange={(event) => setRecordDraft((draft) => ({ ...draft, visitDate: event.target.value }))} /></label>
-            <label><span>就诊科室 *</span><Input placeholder="例如：内分泌科" value={recordDraft.department} onChange={(event) => setRecordDraft((draft) => ({ ...draft, department: event.target.value }))} /></label>
-            <label><span>接诊医生 *</span><Input placeholder="填写医生姓名" value={recordDraft.doctorName} onChange={(event) => setRecordDraft((draft) => ({ ...draft, doctorName: event.target.value }))} /></label>
             <label className="clinical-entry-form__wide"><span>主诉</span><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} value={recordDraft.chiefComplaint} onChange={(event) => setRecordDraft((draft) => ({ ...draft, chiefComplaint: event.target.value }))} /></label>
             <label><span>诊断</span><Input value={recordDraft.diagnosis} onChange={(event) => setRecordDraft((draft) => ({ ...draft, diagnosis: event.target.value }))} /></label>
             <label className="clinical-entry-form__wide"><span>治疗方案</span><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} value={recordDraft.treatmentPlan} onChange={(event) => setRecordDraft((draft) => ({ ...draft, treatmentPlan: event.target.value }))} /></label>
@@ -815,8 +926,16 @@ export function AccessManagement({ accessToken }: Props) {
           </div>
         ) : (
           <div className="clinical-entry-form">
+            <div className="clinical-entry-identity clinical-entry-form__wide">
+              <div className="clinical-entry-identity__heading">本次操作</div>
+              <div className="clinical-entry-identity__details">
+                <div><span>患者</span><strong>{workspacePatient?.patient.name} · {workspacePatient?.patient.patientNo}</strong></div>
+                <div><span>开方医生</span><strong>{clinicalIdentity?.displayName || '正在核验登录身份…'}</strong></div>
+                <div><span>开方科室</span><strong>{clinicalIdentity?.clinicalDepartmentName || '正在核验科室…'}</strong></div>
+              </div>
+              <small>开方医生和开方科室由已验证身份自动写入，并计入审计记录。</small>
+            </div>
             <label><span>开具时间 *</span><Input type="datetime-local" value={prescriptionDraft.prescriptionDate} onChange={(event) => setPrescriptionDraft((draft) => ({ ...draft, prescriptionDate: event.target.value }))} /></label>
-            <label><span>开方医生 *</span><Input placeholder="填写医生姓名" value={prescriptionDraft.doctorName} onChange={(event) => setPrescriptionDraft((draft) => ({ ...draft, doctorName: event.target.value }))} /></label>
             <label><span>金额 *</span><Input type="number" min="0.01" step="0.01" placeholder="0.00" value={prescriptionDraft.totalAmount} onChange={(event) => setPrescriptionDraft((draft) => ({ ...draft, totalAmount: event.target.value }))} /></label>
             <label><span>诊断</span><Input value={prescriptionDraft.diagnosis} onChange={(event) => setPrescriptionDraft((draft) => ({ ...draft, diagnosis: event.target.value }))} /></label>
             <label className="clinical-entry-form__wide"><span>药品信息</span><Input.TextArea autoSize={{ minRows: 3, maxRows: 6 }} placeholder="填写药品名称、规格、剂量和用法" value={prescriptionDraft.drugsJson} onChange={(event) => setPrescriptionDraft((draft) => ({ ...draft, drugsJson: event.target.value }))} /></label>

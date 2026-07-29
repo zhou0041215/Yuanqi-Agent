@@ -12,7 +12,6 @@ public final class ScopedSpecifications {
     public static <T> Specification<T> accessible(UserContext user) {
         return (root, query, criteriaBuilder) -> {
             List<Predicate> mandatory = new ArrayList<>();
-            mandatory.add(criteriaBuilder.equal(root.get("tenantId"), user.tenantId()));
             mandatory.add(criteriaBuilder.isFalse(root.get("deleted")));
 
             if (user.hasAllAccess()) {

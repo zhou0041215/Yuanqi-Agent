@@ -40,7 +40,7 @@ def load_documents(limit: int | None) -> list[dict]:
     return [build_disease_document(record) for record in records]
 
 
-async def index_documents(tenant_id: int, documents: list[dict], batch_size: int) -> None:
+async def index_documents(documents: list[dict], batch_size: int) -> None:
     settings = get_settings()
     client = AsyncQdrantClient(
         url=str(settings.qdrant_url),
@@ -63,7 +63,7 @@ async def index_documents(tenant_id: int, documents: list[dict], batch_size: int
         await store.ensure_collection()
         for offset in range(0, len(documents), batch_size):
             batch = documents[offset : offset + batch_size]
-            await store.upsert_documents(tenant_id, batch)
+            await store.upsert_documents(batch)
             print(f"indexed {min(offset + len(batch), len(documents))}/{len(documents)}")
     finally:
         if embedding_client is not None:
@@ -73,12 +73,9 @@ async def index_documents(tenant_id: int, documents: list[dict], batch_size: int
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--tenant-id", type=int, default=1)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--batch-size", type=int, default=128)
     args = parser.parse_args()
-    if args.tenant_id <= 0:
-        parser.error("--tenant-id must be positive")
     if args.limit is not None and args.limit <= 0:
         parser.error("--limit must be positive")
     if not 1 <= args.batch_size <= 256:
@@ -86,7 +83,7 @@ def main() -> None:
 
     documents = load_documents(args.limit)
     print(f"built {len(documents)} medical documents")
-    asyncio.run(index_documents(args.tenant_id, documents, args.batch_size))
+    asyncio.run(index_documents(documents, args.batch_size))
 
 
 if __name__ == "__main__":

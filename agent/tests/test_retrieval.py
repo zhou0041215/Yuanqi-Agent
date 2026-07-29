@@ -40,12 +40,12 @@ def candidate(
 
 
 def test_rrf_rewards_documents_returned_by_both_retrievers() -> None:
-    graph = [candidate("Customer:1", "graph", 1.0), candidate("Risk:2", "graph", 0.5)]
-    vector = [candidate("Risk:2", "vector", 0.99), candidate("Contract:3", "vector", 0.8)]
+    graph = [candidate("Disease:1", "graph", 1.0), candidate("Symptom:2", "graph", 0.5)]
+    vector = [candidate("Symptom:2", "vector", 0.99), candidate("Drug:3", "vector", 0.8)]
 
     fused = reciprocal_rank_fusion([graph, vector], rrf_k=60, top_k=3)
 
-    assert fused[0].document_id == "Risk:2"
+    assert fused[0].document_id == "Symptom:2"
     assert fused[0].sources == ["graph", "vector"]
     assert fused[0].citation_id == "K1"
     assert fused[0].metadata["sourceRanks"] == {"graph": 2, "vector": 1}
@@ -170,14 +170,14 @@ class CapturingDriver:
         return (
             [
                 FakeRecord(
-                    entity_key="Customer:7",
-                    title="华东客户 A",
-                    content="存在合同履约风险",
-                    labels=["Customer"],
+                    entity_key="Disease:7",
+                    title="测试疾病 A",
+                    content="存在需要复查的风险",
+                    labels=["Disease"],
                     entity_id=7,
                     match_priority=0,
                     hops=1,
-                    path_labels=["华东客户 A", "风险 R1"],
+                    path_labels=["测试疾病 A", "症状 R1"],
                 )
             ],
             None,
@@ -186,22 +186,21 @@ class CapturingDriver:
 
 
 @pytest.mark.asyncio
-async def test_graph_retrieval_uses_fixed_cypher_and_tenant_parameter() -> None:
+async def test_graph_retrieval_uses_fixed_parameterized_cypher() -> None:
     driver = CapturingDriver()
     retriever = Neo4jGraphRetriever(driver, "neo4j")  # type: ignore[arg-type]
     malicious = "华东') MATCH (n) DETACH DELETE n //"
 
-    result = await retriever.search(malicious, tenant_id=42, top_k=5)
+    result = await retriever.search(malicious, top_k=5)
 
     assert driver.query == GRAPH_SEARCH_QUERY
     assert malicious not in driver.query
-    assert driver.kwargs["parameters_"]["tenant_id"] == 42
     assert driver.kwargs["parameters_"]["limit"] == 5
-    assert result[0].document_id == "Customer:7"
+    assert result[0].document_id == "Disease:7"
 
 
 @pytest.mark.asyncio
-async def test_qdrant_search_is_tenant_isolated() -> None:
+async def test_qdrant_search_uses_the_shared_medical_corpus() -> None:
     client = AsyncQdrantClient(":memory:")
     embedding = DeterministicHashEmbedding(64)
     store = QdrantKnowledgeStore(client, "knowledge", embedding, 64)
@@ -209,36 +208,33 @@ async def test_qdrant_search_is_tenant_isolated() -> None:
     try:
         await store.ensure_collection()
         await store.upsert_documents(
-            1,
             [
                 {
-                    "document_id": "tenant-1-chunk",
+                    "document_id": "medical-a",
                     "entity_key": "Risk:1",
-                    "title": "租户一风险",
+                    "title": "医疗知识 A",
                     "content": "供应商延期交付风险",
-                    "source_uri": "https://example.org/tenant-1",
+                    "source_uri": "https://example.org/medical-a",
                     "metadata": {"governance_status": "PUBLISHED"},
                 }
             ],
         )
         await store.upsert_documents(
-            2,
             [
                 {
-                    "document_id": "tenant-2-chunk",
+                    "document_id": "medical-b",
                     "entity_key": "Risk:2",
-                    "title": "租户二风险",
+                    "title": "医疗知识 B",
                     "content": "供应商延期交付风险",
-                    "source_uri": "https://example.org/tenant-2",
+                    "source_uri": "https://example.org/medical-b",
                     "metadata": {"governance_status": "PUBLISHED"},
                 }
             ],
         )
 
-        results = await retriever.search("供应商延期交付风险", tenant_id=1, top_k=10)
+        results = await retriever.search("供应商延期交付风险", top_k=10)
 
-        assert [item.document_id for item in results] == ["Risk:1"]
-        assert all("租户二" not in item.title for item in results)
+        assert {item.document_id for item in results} == {"Risk:1", "Risk:2"}
     finally:
         await client.close()
 
@@ -253,7 +249,6 @@ async def test_qdrant_search_returns_catalog_tier_with_its_label() -> None:
     try:
         await store.ensure_collection()
         await store.upsert_documents(
-            1,
             [
                 {
                     "document_id": "Disease:目录疾病",
@@ -266,7 +261,7 @@ async def test_qdrant_search_returns_catalog_tier_with_its_label() -> None:
             ],
         )
 
-        results = await retriever.search("目录疾病 目录症状", tenant_id=1, top_k=10)
+        results = await retriever.search("目录疾病 目录症状", top_k=10)
 
         assert [item.document_id for item in results] == ["Disease:目录疾病"]
         assert results[0].metadata["governance_status"] == "LEGACY_UNREVIEWED"
@@ -283,7 +278,6 @@ async def test_qdrant_search_excludes_governed_legacy_entities() -> None:
     try:
         await store.ensure_collection()
         await store.upsert_documents(
-            1,
             [
                 {
                     "document_id": "Disease:口腔干燥综合征",
@@ -298,7 +292,6 @@ async def test_qdrant_search_excludes_governed_legacy_entities() -> None:
 
         results = await retriever.search(
             "口腔干燥综合征",
-            tenant_id=1,
             top_k=10,
         )
 
@@ -317,7 +310,6 @@ async def test_qdrant_store_rejects_unpublished_documents() -> None:
         await store.ensure_collection()
         with pytest.raises(ValueError, match="PUBLISHED"):
             await store.upsert_documents(
-                1,
                 [
                     {
                         "document_id": "legacy",
@@ -342,7 +334,6 @@ async def test_qdrant_store_indexes_catalog_tier_and_keeps_its_label() -> None:
     try:
         await store.ensure_collection()
         await store.upsert_documents(
-            1,
             [
                 {
                     "document_id": "Disease:目录疾病",
@@ -360,7 +351,6 @@ async def test_qdrant_store_indexes_catalog_tier_and_keeps_its_label() -> None:
         # An HTTPS source is still mandatory for every tier.
         with pytest.raises(ValueError, match="HTTPS"):
             await store.upsert_documents(
-                1,
                 [
                     {
                         "document_id": "Disease:无来源",
@@ -376,7 +366,7 @@ async def test_qdrant_store_indexes_catalog_tier_and_keeps_its_label() -> None:
 
 
 @pytest.mark.asyncio
-async def test_replace_documents_removes_retired_tenant_points() -> None:
+async def test_replace_documents_removes_retired_points() -> None:
     client = AsyncQdrantClient(":memory:")
     embedding = DeterministicHashEmbedding(64)
     store = QdrantKnowledgeStore(client, "knowledge", embedding, 64)
@@ -388,7 +378,6 @@ async def test_replace_documents_removes_retired_tenant_points() -> None:
     try:
         await store.ensure_collection()
         await store.replace_documents(
-            1,
             [
                 {
                     **published,
@@ -399,7 +388,6 @@ async def test_replace_documents_removes_retired_tenant_points() -> None:
             ],
         )
         await store.replace_documents(
-            1,
             [
                 {
                     **published,
@@ -410,7 +398,7 @@ async def test_replace_documents_removes_retired_tenant_points() -> None:
             ],
         )
 
-        results = await retriever.search("糖尿病知识", tenant_id=1, top_k=10)
+        results = await retriever.search("糖尿病知识", top_k=10)
 
         assert [result.document_id for result in results] == ["new"]
     finally:
@@ -421,8 +409,8 @@ class StaticRetriever:
     def __init__(self, result: list[RetrievalCandidate] | Exception):
         self.result = result
 
-    async def search(self, query: str, tenant_id: int, top_k: int):
-        del query, tenant_id, top_k
+    async def search(self, query: str, top_k: int):
+        del query, top_k
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
@@ -447,7 +435,6 @@ async def test_hybrid_retrieval_applies_versioned_governance_exclusions() -> Non
 
     result = await hybrid.search(
         "腹泻和口腔干燥综合征",
-        tenant_id=1,
         top_k=5,
     )
 
@@ -462,7 +449,7 @@ async def test_hybrid_retrieval_degrades_when_one_source_fails() -> None:
         StaticRetriever([candidate("Risk:1", "vector", 0.9)]),
     )
 
-    result = await hybrid.search("delivery risk", tenant_id=1, top_k=5)
+    result = await hybrid.search("delivery risk", top_k=5)
 
     assert result.degraded_sources == ["graph"]
     assert result.items[0].citation_id == "K1"
@@ -477,25 +464,25 @@ async def test_hybrid_retrieval_fails_closed_without_any_source() -> None:
     )
 
     with pytest.raises(AgentError, match="Both graph and vector") as captured:
-        await hybrid.search("delivery risk", tenant_id=1, top_k=5)
+        await hybrid.search("delivery risk", top_k=5)
 
     assert captured.value.status_code == 503
 
 
 class CapturingKnowledgeRetriever:
     def __init__(self) -> None:
-        self.tenant_id: int | None = None
+        self.calls = 0
 
-    async def search(self, query: str, tenant_id: int, top_k: int):
-        self.tenant_id = tenant_id
+    async def search(self, query: str, top_k: int):
+        self.calls += 1
         return await HybridRetriever(
-            StaticRetriever([candidate("Customer:1", "graph", 1.0)]),
+            StaticRetriever([candidate("Disease:1", "graph", 1.0)]),
             StaticRetriever([]),
-        ).search(query, tenant_id, top_k)
+        ).search(query, top_k)
 
 
 @pytest.mark.asyncio
-async def test_knowledge_tool_takes_tenant_only_from_verified_runtime() -> None:
+async def test_knowledge_tool_uses_the_shared_medical_corpus() -> None:
     knowledge = CapturingKnowledgeRetriever()
     registry = ToolRegistry(
         object(),  # type: ignore[arg-type]
@@ -503,14 +490,13 @@ async def test_knowledge_tool_takes_tenant_only_from_verified_runtime() -> None:
         knowledge,  # type: ignore[arg-type]
     )
     definition, arguments = registry.validate(
-        "search_knowledge", {"query": "customer risk", "top_k": 3}
+        "search_knowledge", {"query": "disease risk", "top_k": 3}
     )
     runtime = RequestRuntime(
         "Bearer secret",
         "trace-knowledge-001",
         uuid4(),
         user_id=1001,
-        tenant_id=77,
     )
 
     result = await registry.execute(
@@ -519,5 +505,5 @@ async def test_knowledge_tool_takes_tenant_only_from_verified_runtime() -> None:
         runtime,
     )
 
-    assert knowledge.tenant_id == 77
-    assert result["items"][0]["documentId"] == "Customer:1"
+    assert knowledge.calls == 1
+    assert result["items"][0]["documentId"] == "Disease:1"

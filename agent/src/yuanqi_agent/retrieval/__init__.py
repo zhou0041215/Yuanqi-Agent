@@ -1,4 +1,4 @@
-"""Tenant-isolated GraphRAG retrieval infrastructure."""
+"""Single-institution GraphRAG retrieval infrastructure."""
 
 from yuanqi_agent.retrieval.hybrid import HybridRetriever
 from yuanqi_agent.retrieval.models import KnowledgeSearchResult, RetrievalCandidate

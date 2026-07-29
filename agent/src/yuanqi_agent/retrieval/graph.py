@@ -100,14 +100,11 @@ class Neo4jGraphRetriever:
         self._driver = driver
         self._database = database
 
-    async def search(self, query: str, tenant_id: int, top_k: int) -> list[RetrievalCandidate]:
+    async def search(self, query: str, top_k: int) -> list[RetrievalCandidate]:
         terms = self._terms(query)
         records, _, _ = await self._driver.execute_query(
             GRAPH_SEARCH_QUERY,
             parameters_={
-                # Reserved for a future tenant-scoped graph. It is deliberately
-                # supplied from verified runtime context and never from the user.
-                "tenant_id": tenant_id,
                 "allowed_labels": list(self._ALLOWED_LABELS),
                 "terms": terms,
                 # Used to detect entity names that occur verbatim in the question.

@@ -57,8 +57,7 @@ public class PrescriptionStatusWorkflowService {
     public WorkflowInstanceResponse start(StartPrescriptionStatusChangeRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
         PrescriptionResponse prescription = prescriptionService.get(request.prescriptionId());
-        String businessKey = "tenant:" + user.tenantId()
-                + ":prescription:" + request.prescriptionId();
+        String businessKey = "prescription:" + request.prescriptionId();
         if (prescription.status() != PrescriptionStatus.PENDING) {
             throw BusinessException.conflict("Only pending prescriptions can enter status approval");
         }
@@ -83,7 +82,6 @@ public class PrescriptionStatusWorkflowService {
         }
 
         Map<String, Object> variables = new HashMap<>();
-        variables.put("tenantId", user.tenantId());
         variables.put("requesterId", user.userId());
         variables.put("prescriptionId", request.prescriptionId());
         variables.put("targetStatus", request.targetStatus().name());
@@ -92,8 +90,6 @@ public class PrescriptionStatusWorkflowService {
 
         ProcessInstance process = runtimeService.createProcessInstanceBuilder()
                 .processDefinitionKey(PROCESS_KEY)
-                .tenantId(Long.toString(user.tenantId()))
-                .fallbackToDefaultTenant()
                 .businessKey(businessKey)
                 .variables(variables)
                 .start();
@@ -104,7 +100,6 @@ public class PrescriptionStatusWorkflowService {
             throw new IllegalStateException("Approval task was not created");
         }
         notificationService.send(
-                user.tenantId(),
                 request.approverId(),
                 "APPROVAL_REQUIRED",
                 "新的处方审批任务",
@@ -121,7 +116,6 @@ public class PrescriptionStatusWorkflowService {
         return taskService.createTaskQuery()
                 .processDefinitionKey(PROCESS_KEY)
                 .taskAssignee(Long.toString(user.userId()))
-                .processVariableValueEquals("tenantId", user.tenantId())
                 .active()
                 .orderByTaskCreateTime()
                 .desc()
@@ -135,16 +129,11 @@ public class PrescriptionStatusWorkflowService {
     public List<PrescriptionWorkflowApproverResponse> approvers(long prescriptionId) {
         UserContext user = currentUserProvider.requireCurrentUser();
         PrescriptionResponse prescription = prescriptionService.get(prescriptionId);
-        return accessPersonRepository.findAllByTenantIdOrderByDisplayNameAsc(user.tenantId()).stream()
+        return accessPersonRepository.findAllByOrderByDisplayNameAsc().stream()
                 .filter(person -> person.getUserId() != user.userId())
                 .filter(person -> "ACTIVE".equals(person.getStatus()))
-                .filter(person -> "SYSTEM_ADMIN".equals(person.getRoleCode())
-                        || "DEPARTMENT_LEAD".equals(person.getRoleCode()))
-                .filter(person -> person.getDataScope() == com.yuanqi.backend.security.DataScopeType.ALL
-                        || (person.getDataScope() == com.yuanqi.backend.security.DataScopeType.DEPARTMENT
-                            && person.getDepartmentId() == prescription.departmentId())
-                        || (person.getDataScope() == com.yuanqi.backend.security.DataScopeType.SELF
-                            && person.getUserId() == prescription.ownerId()))
+                .filter(person -> "SYSTEM_ADMIN".equals(person.getRoleCode()))
+                .filter(person -> person.getDataScope() == com.yuanqi.backend.security.DataScopeType.ALL)
                 .map(person -> new PrescriptionWorkflowApproverResponse(
                         person.getUserId(),
                         person.getDisplayName(),
@@ -158,7 +147,6 @@ public class PrescriptionStatusWorkflowService {
         UserContext user = currentUserProvider.requireCurrentUser();
         return runtimeService.createProcessInstanceQuery()
                 .processDefinitionKey(PROCESS_KEY)
-                .variableValueEquals("tenantId", user.tenantId())
                 .variableValueEquals("requesterId", user.userId())
                 .active()
                 .listPage(0, MAX_TASKS)
@@ -183,7 +171,6 @@ public class PrescriptionStatusWorkflowService {
                 .processDefinitionKey(PROCESS_KEY)
                 .taskId(taskId)
                 .taskAssignee(Long.toString(user.userId()))
-                .processVariableValueEquals("tenantId", user.tenantId())
                 .active()
                 .singleResult();
         if (task == null) {
@@ -195,7 +182,6 @@ public class PrescriptionStatusWorkflowService {
                 "approvalComment", normalizeComment(request.comment())
         ));
         notificationService.send(
-                user.tenantId(),
                 positiveLong(variables.get("requesterId")),
                 request.approved() ? "APPROVAL_APPROVED" : "APPROVAL_REJECTED",
                 request.approved() ? "处方变更已批准" : "处方变更已驳回",

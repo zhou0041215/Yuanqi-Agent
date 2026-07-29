@@ -56,6 +56,7 @@ export function decodeAgentEvent(raw: RawSseEvent): AgentStreamEvent {
     case 'text':
       return { type: 'text', text: requiredString(payload.text, 'text', true) };
     case 'uiData':
+    case 'approval':
       if (!isRecord(payload.uiData)) throw new Error('uiData 结构无效');
       return { type: 'uiData', uiData: validateUiData(payload.uiData) };
     case 'done':

@@ -9,7 +9,7 @@ from yuanqi_agent.trusted_medical_knowledge import get_knowledge_governance_poli
 
 
 class CandidateRetriever(Protocol):
-    async def search(self, query: str, tenant_id: int, top_k: int) -> list[RetrievalCandidate]: ...
+    async def search(self, query: str, top_k: int) -> list[RetrievalCandidate]: ...
 
 
 class HybridRetriever:
@@ -26,9 +26,7 @@ class HybridRetriever:
         self._rrf_k = rrf_k
         self._timeout = timeout_seconds
 
-    async def search(self, query: str, tenant_id: int, top_k: int) -> KnowledgeSearchResult:
-        if tenant_id <= 0:
-            raise AgentError("TENANT_CONTEXT_REQUIRED", "A verified tenant is required", 403)
+    async def search(self, query: str, top_k: int) -> KnowledgeSearchResult:
         normalized = query.strip()
         if not normalized:
             raise AgentError("INVALID_RETRIEVAL_QUERY", "Query must not be blank", 422)
@@ -36,8 +34,8 @@ class HybridRetriever:
         governance = get_knowledge_governance_policy()
         retrieval_limit = top_k + len(governance.excluded_entities)
         graph_result, vector_result = await asyncio.gather(
-            self._one(self._graph, normalized, tenant_id, retrieval_limit),
-            self._one(self._vector, normalized, tenant_id, retrieval_limit),
+            self._one(self._graph, normalized, retrieval_limit),
+            self._one(self._vector, normalized, retrieval_limit),
         )
         degraded: list[str] = []
         ranked_lists: list[list[RetrievalCandidate]] = []
@@ -110,12 +108,11 @@ class HybridRetriever:
         self,
         retriever: CandidateRetriever,
         query: str,
-        tenant_id: int,
         top_k: int,
     ) -> list[RetrievalCandidate] | Exception:
         try:
             return await asyncio.wait_for(
-                retriever.search(query, tenant_id, top_k), timeout=self._timeout
+                retriever.search(query, top_k), timeout=self._timeout
             )
         except Exception as exc:
             return exc

@@ -61,4 +61,37 @@ describe('parseSseStream', () => {
       }),
     ).toThrow('不支持的动态组件类型');
   });
+
+  it.each(['uiData', 'approval'])(
+    'decodes approval cards from the %s event',
+    (event) => {
+      expect(
+        decodeAgentEvent({
+          event,
+          data: JSON.stringify({
+            uiData: {
+              type: 'approval_card',
+              threadId: 'thread-2',
+              action: '创建处方',
+              riskLevel: 'critical',
+              tool: 'create_prescription',
+              targetParameters: { patient_id: 2 },
+              fingerprint: 'fingerprint-2',
+            },
+          }),
+        }),
+      ).toEqual({
+        type: 'uiData',
+        uiData: {
+          type: 'approval_card',
+          threadId: 'thread-2',
+          action: '创建处方',
+          riskLevel: 'critical',
+          tool: 'create_prescription',
+          targetParameters: { patient_id: 2 },
+          fingerprint: 'fingerprint-2',
+        },
+      });
+    },
+  );
 });

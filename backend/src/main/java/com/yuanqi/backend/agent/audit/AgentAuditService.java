@@ -25,7 +25,6 @@ public class AgentAuditService {
     public AgentAuditResponse record(AgentAuditRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
         AgentAuditEvent event = new AgentAuditEvent(
-                user.tenantId(),
                 user.userId(),
                 user.username(),
                 request.threadId(),
@@ -43,8 +42,7 @@ public class AgentAuditService {
     @Transactional(readOnly = true)
     public List<AgentAuditResponse> recent(int limit) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        return repository.findAllByTenantIdOrderByOccurredAtDesc(
-                        user.tenantId(), PageRequest.of(0, limit))
+        return repository.findAllByOrderByOccurredAtDesc(PageRequest.of(0, limit))
                 .stream()
                 .map(AgentAuditResponse::from)
                 .toList();

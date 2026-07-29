@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 @RestController
 @RequestMapping("/api/v1/agent-audit/events")
-@Tag(name = "Agent audit", description = "Tenant-scoped, parameter-free Agent tool audit trail")
+@Tag(name = "Agent audit", description = "Parameter-free Agent tool audit trail")
 public class AgentAuditController {
     private final AgentAuditService service;
 
@@ -39,7 +39,7 @@ public class AgentAuditController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('agent:audit:read')")
-    @Operation(summary = "List recent Agent tool lifecycle events for the current tenant")
+    @Operation(summary = "List recent Agent tool lifecycle events")
     public ApiResponse<List<AgentAuditResponse>> recent(
             @RequestParam(defaultValue = "50") @Min(1) @Max(100) int limit
     ) {

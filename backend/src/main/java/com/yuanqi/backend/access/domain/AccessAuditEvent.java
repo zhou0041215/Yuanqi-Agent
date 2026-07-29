@@ -15,9 +15,6 @@ public class AccessAuditEvent {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
-
     @Column(name = "actor_user_id", nullable = false, updatable = false)
     private long actorUserId;
 
@@ -40,7 +37,6 @@ public class AccessAuditEvent {
     }
 
     public AccessAuditEvent(
-            long tenantId,
             long actorUserId,
             String actorName,
             String action,
@@ -48,7 +44,6 @@ public class AccessAuditEvent {
             String targetLabel,
             Instant occurredAt
     ) {
-        this.tenantId = tenantId;
         this.actorUserId = actorUserId;
         this.actorName = actorName;
         this.action = action;

@@ -42,7 +42,6 @@ public class PrescriptionAnalyticsService {
         Collection<Long> requestedDepartments = request.departmentIds().isEmpty()
                 ? List.of(-1L) : request.departmentIds();
         List<Prescription> matched = repository.findAccessibleSnapshot(
-                user.tenantId(),
                 user.userId(),
                 user.hasAllAccess(),
                 user.hasSelfAccess(),

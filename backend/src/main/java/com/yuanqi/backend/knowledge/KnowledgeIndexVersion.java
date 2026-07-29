@@ -14,8 +14,6 @@ import java.time.Instant;
 public class KnowledgeIndexVersion extends AuditedEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
     @Column(name = "version_name", nullable = false, length = 100)
     private String versionName;
     @Column(name = "collection_name", nullable = false, length = 100)
@@ -31,8 +29,8 @@ public class KnowledgeIndexVersion extends AuditedEntity {
     @Column(name = "activated_at")
     private Instant activatedAt;
     protected KnowledgeIndexVersion() {}
-    public KnowledgeIndexVersion(long tenantId, String versionName, String collectionName, long requestedBy) {
-        this.tenantId = tenantId; this.versionName = versionName; this.collectionName = collectionName;
+    public KnowledgeIndexVersion(String versionName, String collectionName, long requestedBy) {
+        this.versionName = versionName; this.collectionName = collectionName;
         this.requestedBy = requestedBy; this.status = "BUILDING";
     }
     public void complete(int count) { status = "ACTIVE"; documentCount = count; activatedAt = Instant.now(); errorMessage = null; }

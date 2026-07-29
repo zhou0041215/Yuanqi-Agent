@@ -9,12 +9,17 @@ class RequestRuntime:
     trace_id: str
     thread_id: UUID
     user_id: int | None = None
-    tenant_id: int | None = None
     department_id: int | None = None
+    operation_fingerprint: str | None = None
 
     @property
     def idempotency_key(self) -> str:
-        return f"agent-{self.thread_id}"
+        suffix = (
+            f"-{self.operation_fingerprint}"
+            if self.operation_fingerprint is not None
+            else ""
+        )
+        return f"agent-{self.thread_id}{suffix}"
 
 
 _runtime: ContextVar[RequestRuntime | None] = ContextVar("yuanqi_request_runtime", default=None)

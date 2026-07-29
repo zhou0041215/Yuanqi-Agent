@@ -6,7 +6,7 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AccessPersonRepository extends JpaRepository<AccessPerson, Long> {
-    List<AccessPerson> findAllByTenantIdOrderByDisplayNameAsc(long tenantId);
+    List<AccessPerson> findAllByOrderByDisplayNameAsc();
 
-    Optional<AccessPerson> findByTenantIdAndUserId(long tenantId, long userId);
+    Optional<AccessPerson> findByUserId(long userId);
 }

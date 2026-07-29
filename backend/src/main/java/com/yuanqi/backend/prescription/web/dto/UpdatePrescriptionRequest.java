@@ -9,14 +9,11 @@ import java.time.LocalDateTime;
 public record UpdatePrescriptionRequest(
         @Positive Long patientId,
         Long recordId,
-        @Size(min = 1, max = 100) String doctorName,
         LocalDateTime prescriptionDate,
         String diagnosis,
         String drugsJson,
         @Positive BigDecimal totalAmount,
         PrescriptionStatus status,
-        String notes,
-        @Positive Long ownerId,
-        @Positive Long departmentId
+        String notes
 ) {
 }

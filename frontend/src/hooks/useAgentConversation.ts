@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { analyzeMedicalReport, resumeAgentStream, startAgentStream } from '../api/client';
-import type { AgentStreamEvent, AgentUiData, ReportAnalysis } from '../api/types';
+import { attachPatientContext } from '../api/patientContext';
+import type {
+  AgentPatientContext,
+  AgentStreamEvent,
+  AgentUiData,
+  ReportAnalysis,
+} from '../api/types';
 import {
   createSession,
   deleteRemoteSession,
@@ -120,9 +126,20 @@ export function useAgentConversation(accessToken: string) {
           case 'text':
             return { ...turn, content: turn.content + event.text };
           case 'uiData':
-            return { ...turn, uiData: event.uiData };
-          case 'tool_result':
-            return { ...turn, content: turn.content + '\n\n' + event.toolResult.formatted };
+            return {
+              ...turn,
+              uiData: event.uiData,
+              streaming: false,
+              status: event.uiData.type === 'approval_card' ? 'waiting_approval' : turn.status,
+            };
+          case 'tool_result': {
+            const formatted = event.toolResult.formatted.trim();
+            if (!formatted) return turn;
+            return {
+              ...turn,
+              content: turn.content ? `${turn.content}\n\n${formatted}` : formatted,
+            };
+          }
           case 'done':
             return { ...turn, streaming: false, status: event.status };
           case 'error':
@@ -134,7 +151,11 @@ export function useAgentConversation(accessToken: string) {
   );
 
   const send = useCallback(
-    async (message: string, mode: 'knowledge' | 'report' = 'knowledge') => {
+    async (
+      message: string,
+      mode: 'knowledge' | 'report' = 'knowledge',
+      patientContext?: AgentPatientContext,
+    ) => {
       const normalized = message.trim();
       if (!normalized || busy) return;
 
@@ -164,7 +185,7 @@ export function useAgentConversation(accessToken: string) {
       setBusy(true);
       try {
         await startAgentStream(
-          {
+          attachPatientContext({
             threadId: sid,
             mode,
             message: normalized,
@@ -172,7 +193,7 @@ export function useAgentConversation(accessToken: string) {
               .filter((turn) => !turn.streaming && !turn.error && turn.content.trim())
               .slice(-12)
               .map((turn) => ({ role: turn.role, content: turn.content.slice(0, 8000) })),
-          },
+          }, patientContext),
           accessToken,
           (event) => consumeEvent(assistantId, event),
           controller.signal,
@@ -199,6 +220,7 @@ export function useAgentConversation(accessToken: string) {
       updateAssistant(assistantId, (turn) => ({
         ...turn,
         streaming: true,
+        status: 'resuming',
         approvalDecision: approved ? 'approved' : 'rejected',
       }));
       try {

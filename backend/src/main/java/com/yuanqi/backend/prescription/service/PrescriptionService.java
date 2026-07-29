@@ -2,18 +2,22 @@ package com.yuanqi.backend.prescription.service;
 
 import com.yuanqi.backend.common.api.PageResponse;
 import com.yuanqi.backend.common.exception.BusinessException;
+import com.yuanqi.backend.medicalrecord.service.MedicalRecordService;
+import com.yuanqi.backend.patient.service.PatientService;
 import com.yuanqi.backend.prescription.domain.Prescription;
 import com.yuanqi.backend.prescription.domain.PrescriptionStatus;
 import com.yuanqi.backend.prescription.repository.PrescriptionRepository;
 import com.yuanqi.backend.prescription.web.dto.CreatePrescriptionRequest;
 import com.yuanqi.backend.prescription.web.dto.PrescriptionResponse;
 import com.yuanqi.backend.prescription.web.dto.UpdatePrescriptionRequest;
+import com.yuanqi.backend.security.ClinicalIdentityService;
 import com.yuanqi.backend.security.CurrentUserProvider;
-import com.yuanqi.backend.security.RowScopeGuard;
 import com.yuanqi.backend.security.UserContext;
 import java.util.Collection;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -24,16 +28,22 @@ import org.springframework.transaction.annotation.Transactional;
 public class PrescriptionService {
     private final PrescriptionRepository prescriptionRepository;
     private final CurrentUserProvider currentUserProvider;
-    private final RowScopeGuard rowScopeGuard;
+    private final PatientService patientService;
+    private final MedicalRecordService medicalRecordService;
+    private final ClinicalIdentityService clinicalIdentityService;
 
     public PrescriptionService(
             PrescriptionRepository prescriptionRepository,
             CurrentUserProvider currentUserProvider,
-            RowScopeGuard rowScopeGuard
+            PatientService patientService,
+            MedicalRecordService medicalRecordService,
+            ClinicalIdentityService clinicalIdentityService
     ) {
         this.prescriptionRepository = prescriptionRepository;
         this.currentUserProvider = currentUserProvider;
-        this.rowScopeGuard = rowScopeGuard;
+        this.patientService = patientService;
+        this.medicalRecordService = medicalRecordService;
+        this.clinicalIdentityService = clinicalIdentityService;
     }
 
     @Transactional(readOnly = true)
@@ -41,7 +51,6 @@ public class PrescriptionService {
         UserContext user = currentUserProvider.requireCurrentUser();
         PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<Prescription> result = prescriptionRepository.findAccessible(
-                user.tenantId(),
                 user.userId(),
                 user.hasAllAccess(),
                 user.hasSelfAccess(),
@@ -69,25 +78,26 @@ public class PrescriptionService {
     @Transactional
     public PrescriptionResponse create(CreatePrescriptionRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        rowScopeGuard.assertAssignable(user, request.ownerId(), request.departmentId());
-        String prescriptionNo = request.prescriptionNo().trim();
-        if (prescriptionRepository.existsByTenantIdAndPrescriptionNo(user.tenantId(), prescriptionNo)) {
-            throw BusinessException.conflict("Prescription number already exists in this tenant");
+        patientService.assertAccessible(request.patientId());
+        assertRecordBelongsToPatient(request.recordId(), request.patientId());
+        var clinician = clinicalIdentityService.requireClinicalWriter(user);
+        String prescriptionNo = generatedPrescriptionNo();
+        if (prescriptionRepository.existsByPrescriptionNo(prescriptionNo)) {
+            throw BusinessException.conflict("Prescription number already exists");
         }
         Prescription prescription = new Prescription(
-                user.tenantId(),
                 prescriptionNo,
                 request.patientId(),
                 request.recordId(),
-                request.doctorName().trim(),
+                clinician.displayName(),
                 request.prescriptionDate(),
                 trimToNull(request.diagnosis()),
                 trimToNull(request.drugsJson()),
                 request.totalAmount(),
-                request.status(),
+                PrescriptionStatus.PENDING,
                 trimToNull(request.notes()),
-                request.ownerId(),
-                request.departmentId()
+                clinician.userId(),
+                clinician.departmentId()
         );
         return PrescriptionResponse.from(prescriptionRepository.save(prescription));
     }
@@ -96,21 +106,22 @@ public class PrescriptionService {
     public PrescriptionResponse update(long id, UpdatePrescriptionRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
         Prescription prescription = requireWritable(id, user);
-        long ownerId = request.ownerId() == null ? prescription.getOwnerId() : request.ownerId();
-        long departmentId = request.departmentId() == null ? prescription.getDepartmentId() : request.departmentId();
-        rowScopeGuard.assertAssignable(user, ownerId, departmentId);
+        long patientId = request.patientId() == null ? prescription.getPatientId() : request.patientId();
+        patientService.assertAccessible(patientId);
+        Long recordId = request.recordId() == null ? prescription.getRecordId() : request.recordId();
+        assertRecordBelongsToPatient(recordId, patientId);
         prescription.update(
-                request.patientId() == null ? prescription.getPatientId() : request.patientId(),
-                request.recordId() == null ? prescription.getRecordId() : request.recordId(),
-                request.doctorName() == null ? prescription.getDoctorName() : request.doctorName().trim(),
+                patientId,
+                recordId,
+                prescription.getDoctorName(),
                 request.prescriptionDate() == null ? prescription.getPrescriptionDate() : request.prescriptionDate(),
                 request.diagnosis() == null ? prescription.getDiagnosis() : trimToNull(request.diagnosis()),
                 request.drugsJson() == null ? prescription.getDrugsJson() : trimToNull(request.drugsJson()),
                 request.totalAmount() == null ? prescription.getTotalAmount() : request.totalAmount(),
                 request.status() == null ? prescription.getStatus() : request.status(),
                 request.notes() == null ? prescription.getNotes() : trimToNull(request.notes()),
-                ownerId,
-                departmentId
+                prescription.getOwnerId(),
+                prescription.getDepartmentId()
         );
         return PrescriptionResponse.from(prescriptionRepository.saveAndFlush(prescription));
     }
@@ -151,7 +162,6 @@ public class PrescriptionService {
     private Prescription requireReadable(long id, UserContext user) {
         return prescriptionRepository.findAccessibleById(
                         id,
-                        user.tenantId(),
                         user.userId(),
                         user.hasAllAccess(),
                         user.hasSelfAccess(),
@@ -165,7 +175,6 @@ public class PrescriptionService {
     private Prescription requireWritable(long id, UserContext user) {
         return prescriptionRepository.findWritableById(
                         id,
-                        user.tenantId(),
                         user.userId(),
                         user.hasAllAccess(),
                         user.hasSelfAccess(),
@@ -189,5 +198,19 @@ public class PrescriptionService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void assertRecordBelongsToPatient(Long recordId, long patientId) {
+        if (recordId == null) {
+            return;
+        }
+        if (medicalRecordService.get(recordId).patientId() != patientId) {
+            throw BusinessException.conflict("The medical record does not belong to the selected patient");
+        }
+    }
+
+    private String generatedPrescriptionNo() {
+        return "RX-" + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 14).toUpperCase(Locale.ROOT);
     }
 }

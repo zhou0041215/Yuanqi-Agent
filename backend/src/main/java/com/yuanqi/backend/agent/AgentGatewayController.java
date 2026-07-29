@@ -1,5 +1,10 @@
 package com.yuanqi.backend.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.yuanqi.backend.common.exception.BusinessException;
+import com.yuanqi.backend.patient.service.PatientService;
 import java.io.IOException;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +16,7 @@ import java.util.concurrent.Executor;
 import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,13 +39,19 @@ public class AgentGatewayController {
 
     private final AgentGatewayClient client;
     private final Executor agentTaskExecutor;
+    private final ObjectMapper objectMapper;
+    private final PatientService patientService;
 
     public AgentGatewayController(
             AgentGatewayClient client,
-            @Qualifier("agentTaskExecutor") Executor agentTaskExecutor
+            @Qualifier("agentTaskExecutor") Executor agentTaskExecutor,
+            ObjectMapper objectMapper,
+            PatientService patientService
     ) {
         this.client = client;
         this.agentTaskExecutor = agentTaskExecutor;
+        this.objectMapper = objectMapper;
+        this.patientService = patientService;
     }
 
     @PostMapping(
@@ -52,12 +64,47 @@ public class AgentGatewayController {
             @RequestHeader(HttpHeaders.AUTHORIZATION) String authorization,
             @RequestHeader(value = "X-Trace-Id", required = false) String traceId
     ) {
+        byte[] verifiedBody = verifiedAgentBody(body);
         return proxyStream(
                 "/api/v1/agent/stream",
-                body,
+                verifiedBody,
                 authorization,
                 normalizedTraceId(traceId)
         );
+    }
+
+    byte[] verifiedAgentBody(byte[] body) {
+        try {
+            JsonNode parsed = objectMapper.readTree(body);
+            if (!(parsed instanceof ObjectNode root)) {
+                throw invalidAgentRequest("Agent request must be a JSON object");
+            }
+            JsonNode suppliedContext = root.get("patientContext");
+            if (suppliedContext == null || suppliedContext.isNull()) {
+                root.remove("patientContext");
+                return objectMapper.writeValueAsBytes(root);
+            }
+            if (!suppliedContext.isObject()
+                    || !suppliedContext.path("patientId").isIntegralNumber()
+                    || !suppliedContext.path("patientId").canConvertToLong()
+                    || suppliedContext.path("patientId").longValue() <= 0) {
+                throw invalidAgentRequest("Patient context is invalid");
+            }
+            long patientId = suppliedContext.path("patientId").longValue();
+            var patient = patientService.get(patientId);
+            ObjectNode verifiedContext = objectMapper.createObjectNode();
+            verifiedContext.put("patientId", patient.id());
+            verifiedContext.put("patientNo", patient.patientNo());
+            verifiedContext.put("name", patient.name());
+            root.set("patientContext", verifiedContext);
+            return objectMapper.writeValueAsBytes(root);
+        } catch (IOException exception) {
+            throw invalidAgentRequest("Agent request contains invalid JSON");
+        }
+    }
+
+    private BusinessException invalidAgentRequest(String message) {
+        return new BusinessException("INVALID_AGENT_REQUEST", message, HttpStatus.BAD_REQUEST);
     }
 
     @PostMapping(

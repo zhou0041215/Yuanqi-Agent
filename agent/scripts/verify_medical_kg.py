@@ -157,7 +157,6 @@ def verify(uri: str, username: str, password: str, database: str) -> int:
                     seed_limit=5,
                     neighbor_limit=12,
                     limit=8,
-                    tenant_id=1,
                 ).data()
                 checks.ok(
                     "production graph retrieval returns results for 糖尿病",

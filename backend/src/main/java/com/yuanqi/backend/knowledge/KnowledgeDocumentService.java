@@ -24,7 +24,6 @@ public class KnowledgeDocumentService {
         UserContext user = users.requireCurrentUser();
         return PageResponse.from(repository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("tenantId"), user.tenantId()));
             if (status != null && !status.isBlank() && !"ALL".equals(status)) {
                 predicates.add(cb.equal(root.get("status"), status));
             } else {
@@ -43,18 +42,18 @@ public class KnowledgeDocumentService {
     @Transactional
     public KnowledgeDocumentResponse create(KnowledgeDocumentRequest request) {
         UserContext user = users.requireCurrentUser();
-        if (repository.existsByTenantIdAndDocumentKey(user.tenantId(), request.documentKey())) {
+        if (repository.existsByDocumentKey(request.documentKey())) {
             throw BusinessException.conflict("Knowledge document key already exists");
         }
         return KnowledgeDocumentResponse.from(repository.save(new KnowledgeDocument(
-                user.tenantId(), request.documentKey(), request.title(), request.entityType(),
+                request.documentKey(), request.title(), request.entityType(),
                 request.content(), request.sourceUri())));
     }
 
     @Transactional
     public KnowledgeDocumentResponse update(long id, KnowledgeDocumentRequest request) {
         UserContext user = users.requireCurrentUser();
-        KnowledgeDocument document = require(id, user.tenantId());
+        KnowledgeDocument document = require(id);
         document.update(request.title(), request.entityType(), request.content(), request.sourceUri());
         return KnowledgeDocumentResponse.from(repository.save(document));
     }
@@ -62,7 +61,7 @@ public class KnowledgeDocumentService {
     @Transactional
     public KnowledgeDocumentResponse transition(long id, String action) {
         UserContext user = users.requireCurrentUser();
-        KnowledgeDocument document = require(id, user.tenantId());
+        KnowledgeDocument document = require(id);
         String next = switch (action) {
             case "submit" -> "REVIEW";
             case "publish" -> "PUBLISHED";
@@ -91,7 +90,7 @@ public class KnowledgeDocumentService {
     @Transactional
     public KnowledgeDocumentResponse delete(long id) {
         UserContext user = users.requireCurrentUser();
-        KnowledgeDocument document = require(id, user.tenantId());
+        KnowledgeDocument document = require(id);
         if (!"DRAFT".equals(document.getStatus()) && !"RETIRED".equals(document.getStatus())) {
             throw BusinessException.conflict("Only draft or retired documents can be deleted");
         }
@@ -102,12 +101,12 @@ public class KnowledgeDocumentService {
     @Transactional(readOnly = true)
     public List<KnowledgeDocumentResponse> published() {
         UserContext user = users.requireCurrentUser();
-        return repository.findAllByTenantIdAndStatusOrderByDocumentKey(user.tenantId(), "PUBLISHED")
+        return repository.findAllByStatusOrderByDocumentKey("PUBLISHED")
                 .stream().map(KnowledgeDocumentResponse::from).toList();
     }
 
-    private KnowledgeDocument require(long id, long tenantId) {
-        return repository.findByIdAndTenantId(id, tenantId)
+    private KnowledgeDocument require(long id) {
+        return repository.findById(id)
                 .orElseThrow(() -> BusinessException.notFound("Knowledge document"));
     }
 }

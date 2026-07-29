@@ -30,6 +30,43 @@ async def test_java_client_rejects_oversized_response_before_json_parsing() -> N
 
 
 @pytest.mark.asyncio
+async def test_java_client_parses_verified_context_with_clinical_identity() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v1/auth/context"
+        return httpx.Response(
+            200,
+            json={
+                "code": "OK",
+                "message": "Success",
+                "data": {
+                    "userId": 1001,
+                    "username": "admin",
+                    "dataScope": "ALL",
+                    "departmentIds": [10],
+                    "displayName": "林澜",
+                    "clinicalDepartmentId": 10,
+                    "clinicalDepartmentName": "内分泌科",
+                    "roleCode": "SYSTEM_ADMIN",
+                    "permissions": ["patient:read"],
+                },
+            },
+        )
+
+    async with httpx.AsyncClient(
+        base_url="http://java.test",
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        context = await JavaApiClient(client).get_user_context(
+            "Bearer token", "trace-context-001"
+        )
+
+    assert context.display_name == "林澜"
+    assert context.clinical_department_id == 10
+    assert context.clinical_department_name == "内分泌科"
+    assert context.role_code == "SYSTEM_ADMIN"
+
+
+@pytest.mark.asyncio
 async def test_agent_audit_uses_phase_specific_idempotency_and_no_arguments() -> None:
     captured: httpx.Request | None = None
 

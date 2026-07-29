@@ -706,9 +706,9 @@ def create_app(settings: Settings | None = None, service: AgentService | None = 
                 }
                 for item in published
             ]
-            # Replace the tenant corpus instead of appending to it. This removes
+            # Replace the single-institution corpus instead of appending to it. This removes
             # retired and legacy-unreviewed points from the active search surface.
-            await store.replace_documents(user.tenant_id, documents)
+            await store.replace_documents(documents)
             await java_client.request(
                 "PATCH",
                 f"/api/v1/knowledge-index-versions/{index_record['id']}/complete",

@@ -11,6 +11,29 @@ def encode_sse(event: str, payload: dict) -> bytes:
     return f"event: {event}\ndata: {data}\n\n".encode()
 
 
+def is_confirmed_write_result(tool_name: str, payload: Any) -> bool:
+    """Require the Java trust root to return the identity of a completed write."""
+    if not isinstance(payload, dict):
+        return False
+    if tool_name == "create_patient":
+        return (
+            isinstance(payload.get("id"), int)
+            and bool(str(payload.get("name") or "").strip())
+            and bool(str(payload.get("patientNo") or "").strip())
+        )
+    if tool_name == "create_prescription":
+        return (
+            isinstance(payload.get("id"), int)
+            and bool(str(payload.get("prescriptionNo") or "").strip())
+        )
+    if tool_name == "create_medical_record":
+        return (
+            isinstance(payload.get("id"), int)
+            and bool(str(payload.get("recordNo") or "").strip())
+        )
+    return True
+
+
 def format_result(
     tool_name: str,
     payload: Any,
@@ -259,9 +282,18 @@ def format_result(
     if tool_name == "create_patient" and isinstance(payload, dict):
         name = payload.get("name", "未知")
         no = payload.get("patientNo", "")
+        if not is_confirmed_write_result(tool_name, payload):
+            return "患者写入结果缺少必要标识，无法确认本次写入。"
         return f"✅ 患者创建成功：**{name}**（{no}）"
     if tool_name == "create_prescription" and isinstance(payload, dict):
         no = payload.get("prescriptionNo", "")
+        if not is_confirmed_write_result(tool_name, payload):
+            return "处方写入结果缺少必要标识，无法确认本次写入。"
         return f"✅ 处方开具成功：**{no}**"
+    if tool_name == "create_medical_record" and isinstance(payload, dict):
+        no = payload.get("recordNo", "")
+        if not is_confirmed_write_result(tool_name, payload):
+            return "病历写入结果缺少必要标识，无法确认本次写入。"
+        return f"✅ 病历创建成功：**{no}**"
     # Fallback: pretty JSON
     return orjson.dumps(payload, option=orjson.OPT_INDENT_2).decode("utf-8")

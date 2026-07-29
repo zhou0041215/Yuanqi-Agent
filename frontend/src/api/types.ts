@@ -6,12 +6,19 @@ export interface ToolCall {
   arguments: Record<string, JsonValue>;
 }
 
+export interface AgentPatientContext {
+  patientId: number;
+  patientNo: string;
+  name: string;
+}
+
 export interface AgentRunBody {
   threadId?: string;
   mode?: 'knowledge' | 'report';
   message: string;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
   toolCall?: ToolCall;
+  patientContext?: AgentPatientContext;
 }
 
 export interface ChartSeries {

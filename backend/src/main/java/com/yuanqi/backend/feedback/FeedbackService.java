@@ -22,9 +22,9 @@ public class FeedbackService {
     public FeedbackResponse submit(FeedbackRequest request) {
         UserContext user = currentUserProvider.requireCurrentUser();
         AnswerFeedback feedback = repository
-                .findByTenantIdAndTurnIdAndUserId(user.tenantId(), request.turnId(), user.userId())
+                .findByTurnIdAndUserId(request.turnId(), user.userId())
                 .orElseGet(() -> new AnswerFeedback(
-                        user.tenantId(), user.userId(), user.username(), request.sessionId(), request.turnId(),
+                        user.userId(), user.username(), request.sessionId(), request.turnId(),
                         request.rating(), request.category(), request.comment()
                 ));
         return FeedbackResponse.from(repository.save(feedback));
@@ -34,7 +34,7 @@ public class FeedbackService {
     public PageResponse<FeedbackResponse> search(int page, int size) {
         UserContext user = currentUserProvider.requireCurrentUser();
         return PageResponse.from(
-                repository.findAllByTenantIdOrderByCreatedAtDesc(user.tenantId(), PageRequest.of(page, size)),
+                repository.findAllByOrderByCreatedAtDesc(PageRequest.of(page, size)),
                 FeedbackResponse::from
         );
     }
@@ -42,7 +42,7 @@ public class FeedbackService {
     @Transactional
     public FeedbackResponse resolve(long id) {
         UserContext user = currentUserProvider.requireCurrentUser();
-        AnswerFeedback feedback = repository.findByIdAndTenantId(id, user.tenantId())
+        AnswerFeedback feedback = repository.findById(id)
                 .orElseThrow(() -> BusinessException.notFound("Feedback not found"));
         feedback.resolve();
         return FeedbackResponse.from(repository.save(feedback));

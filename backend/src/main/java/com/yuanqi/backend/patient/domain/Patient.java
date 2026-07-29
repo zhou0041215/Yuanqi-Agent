@@ -18,9 +18,6 @@ public class Patient extends AuditedEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false, updatable = false)
-    private long tenantId;
-
     @Column(name = "patient_no", nullable = false, unique = true, length = 64)
     private String patientNo;
 
@@ -74,7 +71,6 @@ public class Patient extends AuditedEntity {
     }
 
     public Patient(
-            long tenantId,
             String patientNo,
             String name,
             String gender,
@@ -91,7 +87,6 @@ public class Patient extends AuditedEntity {
             long ownerId,
             long departmentId
     ) {
-        this.tenantId = tenantId;
         this.patientNo = patientNo;
         this.name = name;
         this.gender = gender;
@@ -145,12 +140,13 @@ public class Patient extends AuditedEntity {
         this.deleted = true;
     }
 
-    public Long getId() {
-        return id;
+    public void assignResponsiblePerson(long ownerId, long departmentId) {
+        this.ownerId = ownerId;
+        this.departmentId = departmentId;
     }
 
-    public long getTenantId() {
-        return tenantId;
+    public Long getId() {
+        return id;
     }
 
     public String getPatientNo() {

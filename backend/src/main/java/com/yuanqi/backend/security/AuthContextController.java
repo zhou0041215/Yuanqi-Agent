@@ -13,34 +13,46 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth/context")
 public class AuthContextController {
     private final CurrentUserProvider currentUserProvider;
+    private final ClinicalIdentityService clinicalIdentityService;
 
-    public AuthContextController(CurrentUserProvider currentUserProvider) {
+    public AuthContextController(
+            CurrentUserProvider currentUserProvider,
+            ClinicalIdentityService clinicalIdentityService
+    ) {
         this.currentUserProvider = currentUserProvider;
+        this.clinicalIdentityService = clinicalIdentityService;
     }
 
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public ApiResponse<AuthContextResponse> current() {
         UserContext user = currentUserProvider.requireCurrentUser();
+        ClinicalIdentityService.ClinicalIdentity clinicalIdentity = clinicalIdentityService.current(user);
         Set<String> permissions = SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
                 .map(authority -> authority.getAuthority())
                 .collect(Collectors.toUnmodifiableSet());
         return ApiResponse.success(new AuthContextResponse(
                 user.userId(),
-                user.tenantId(),
                 user.username(),
                 user.dataScope(),
                 user.departmentIds(),
+                clinicalIdentity.displayName(),
+                clinicalIdentity.departmentId(),
+                clinicalIdentity.departmentName(),
+                clinicalIdentity.roleCode(),
                 permissions
         ));
     }
 
     public record AuthContextResponse(
             long userId,
-            long tenantId,
             String username,
             DataScopeType dataScope,
             Set<Long> departmentIds,
+            String displayName,
+            long clinicalDepartmentId,
+            String clinicalDepartmentName,
+            String roleCode,
             Set<String> permissions
     ) {
     }

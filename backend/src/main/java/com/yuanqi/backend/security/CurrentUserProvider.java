@@ -20,14 +20,13 @@ public class CurrentUserProvider {
         }
 
         long userId = parsePositiveLong(jwtAuthentication.getToken().getSubject(), "sub");
-        long tenantId = parsePositiveLong(jwtAuthentication.getToken().getClaim("tenant_id"), "tenant_id");
         DataScopeType scope = parseScope(jwtAuthentication.getToken().getClaimAsString("data_scope"));
         Set<Long> departmentIds = parseLongSet(jwtAuthentication.getToken().getClaim("department_ids"));
         String username = jwtAuthentication.getToken().getClaimAsString("preferred_username");
         if (username == null || username.isBlank()) {
             username = jwtAuthentication.getName();
         }
-        return new UserContext(userId, tenantId, username, scope, departmentIds);
+        return new UserContext(userId, username, scope, departmentIds);
     }
 
     private long parseLong(Object value, String claimName) {

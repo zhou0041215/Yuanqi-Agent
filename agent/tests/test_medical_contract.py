@@ -29,6 +29,14 @@ def test_default_registry_exposes_medical_tools() -> None:
         "search_department",
     } <= names
 
+    schemas = {
+        tool["name"]: tool["inputSchema"]
+        for tool in registry.describe()
+    }
+    for tool_name in ("create_prescription", "create_medical_record"):
+        assert "patientId" not in schemas[tool_name]["properties"]
+        assert "patientId" not in schemas[tool_name].get("required", [])
+
 
 class EntityResolutionResult:
     async def data(self) -> list[dict[str, str]]:

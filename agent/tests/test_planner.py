@@ -10,11 +10,11 @@ from yuanqi_agent.planner import HttpIntentPlanner, OllamaIntentPlanner
 def available_tools() -> list[dict]:
     return [
         {
-            "name": "list_customers",
-            "description": "List visible customers",
+            "name": "list_patients",
+            "description": "List accessible patients",
             "access": "read",
             "riskLevel": "low",
-            "requiredPermission": "customer:read",
+            "requiredPermission": "patient:read",
             "inputSchema": {"type": "object", "properties": {}},
         }
     ]
@@ -26,11 +26,11 @@ async def test_http_planner_receives_schemas_without_user_jwt() -> None:
         assert request.headers["Authorization"] == "Bearer planner-service-key"
         assert "user-secret-jwt" not in request.content.decode()
         payload = json.loads(request.content)
-        assert payload["tools"][0]["name"] == "list_customers"
+        assert payload["tools"][0]["name"] == "list_patients"
         assert payload["responseSchema"]["properties"]["toolCall"]
         return httpx.Response(
             200,
-            json={"toolCall": {"name": "list_customers", "arguments": {}}},
+            json={"toolCall": {"name": "list_patients", "arguments": {}}},
         )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -39,9 +39,9 @@ async def test_http_planner_receives_schemas_without_user_jwt() -> None:
             "http://planner.internal/v1/plan",
             "planner-service-key",
         )
-        call = await planner.plan("List customers", available_tools())
+        call = await planner.plan("List patients", available_tools())
 
-    assert call.name == "list_customers"
+    assert call.name == "list_patients"
 
 
 @pytest.mark.asyncio
@@ -71,7 +71,7 @@ async def test_ollama_planner_uses_permission_filtered_native_tool_calling() -> 
         assert payload["stream"] is False
         assert payload["think"] is False
         assert payload["options"]["temperature"] == 0
-        assert payload["tools"][0]["function"]["name"] == "list_customers"
+        assert payload["tools"][0]["function"]["name"] == "list_patients"
         assert payload["tools"][0]["function"]["parameters"]["type"] == "object"
         return httpx.Response(
             200,
@@ -85,7 +85,7 @@ async def test_ollama_planner_uses_permission_filtered_native_tool_calling() -> 
                             "id": "call-1",
                             "function": {
                                 "index": 0,
-                                "name": "list_customers",
+                                    "name": "list_patients",
                                 "arguments": {"page": 0, "size": 20},
                             },
                         }
@@ -103,7 +103,7 @@ async def test_ollama_planner_uses_permission_filtered_native_tool_calling() -> 
         )
         call = await planner.plan("列出我能访问的客户", available_tools())
 
-    assert call.name == "list_customers"
+    assert call.name == "list_patients"
     assert call.arguments == {"page": 0, "size": 20}
 
 

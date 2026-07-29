@@ -8,10 +8,12 @@ import com.yuanqi.backend.access.repository.AccessPersonRepository;
 import com.yuanqi.backend.access.repository.PatientAccessGrantRepository;
 import com.yuanqi.backend.access.web.AccessManagementResponse;
 import com.yuanqi.backend.access.web.CreatePatientGrantRequest;
+import com.yuanqi.backend.access.web.UpdatePatientAssignmentRequest;
 import com.yuanqi.backend.common.exception.BusinessException;
 import com.yuanqi.backend.patient.domain.Patient;
 import com.yuanqi.backend.patient.repository.PatientRepository;
 import com.yuanqi.backend.security.CurrentUserProvider;
+import com.yuanqi.backend.security.ClinicalIdentityService;
 import com.yuanqi.backend.security.UserContext;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -32,43 +34,46 @@ public class AccessManagementService {
     private final PatientAccessGrantRepository grantRepository;
     private final PatientRepository patientRepository;
     private final CurrentUserProvider currentUserProvider;
+    private final ClinicalIdentityService clinicalIdentityService;
 
     public AccessManagementService(
             AccessPersonRepository personRepository,
             AccessAuditEventRepository auditRepository,
             PatientAccessGrantRepository grantRepository,
             PatientRepository patientRepository,
-            CurrentUserProvider currentUserProvider
+            CurrentUserProvider currentUserProvider,
+            ClinicalIdentityService clinicalIdentityService
     ) {
         this.personRepository = personRepository;
         this.auditRepository = auditRepository;
         this.grantRepository = grantRepository;
         this.patientRepository = patientRepository;
         this.currentUserProvider = currentUserProvider;
+        this.clinicalIdentityService = clinicalIdentityService;
     }
 
     @Transactional(readOnly = true)
     public AccessManagementResponse snapshot() {
         UserContext user = currentUserProvider.requireCurrentUser();
         requireAdministrator(user);
-        var personEntities = personRepository.findAllByTenantIdOrderByDisplayNameAsc(user.tenantId());
+        var personEntities = personRepository.findAllByOrderByDisplayNameAsc();
         var people = personEntities.stream()
                 .map(person -> new AccessManagementResponse.PersonSummary(
                         person.getUserId(), person.getUsername(), person.getDisplayName(),
                         person.getDepartmentId(), person.getDepartmentName(), person.getRoleCode(),
                         person.getDataScope().name(), person.getStatus()))
                 .toList();
-        var patients = patientRepository.findAllByTenantIdAndDeletedFalseOrderByNameAsc(user.tenantId());
+        var patients = patientRepository.findAllByDeletedFalseOrderByNameAsc();
         Map<Long, Patient> patientsById = patients.stream()
                 .collect(Collectors.toMap(Patient::getId, Function.identity()));
         Map<Long, AccessPerson> peopleById = personEntities.stream()
                 .collect(Collectors.toMap(AccessPerson::getUserId, Function.identity()));
         Instant now = Instant.now();
-        var grants = grantRepository.findAllByTenantIdOrderByCreatedAtDesc(user.tenantId()).stream()
+        var grants = grantRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(grant -> toGrantSummary(grant, patientsById, peopleById, now))
                 .toList();
         var audits = auditRepository
-                .findAllByTenantIdOrderByOccurredAtDesc(user.tenantId(), PageRequest.of(0, 50)).stream()
+                .findAllByOrderByOccurredAtDesc(PageRequest.of(0, 50)).stream()
                 .map(event -> new AccessManagementResponse.AuditSummary(
                         event.getOccurredAt(), event.getActorUserId(), event.getActorName(),
                         event.getAction(), event.getTargetType(), event.getTargetLabel()))
@@ -94,23 +99,23 @@ public class AccessManagementService {
         }
 
         Patient patient = patientRepository
-                .findByIdAndTenantIdAndDeletedFalse(request.patientId(), user.tenantId())
+                .findByIdAndDeletedFalse(request.patientId())
                 .orElseThrow(() -> BusinessException.notFound("Patient"));
         AccessPerson grantee = personRepository
-                .findByTenantIdAndUserId(user.tenantId(), request.granteeUserId())
+                .findByUserId(request.granteeUserId())
                 .filter(person -> "ACTIVE".equals(person.getStatus()))
                 .orElseThrow(() -> BusinessException.notFound("Active grantee"));
         if (grantRepository.existsCurrentGrant(
-                user.tenantId(), patient.getId(), grantee.getUserId(), now)) {
+                patient.getId(), grantee.getUserId(), now)) {
             throw BusinessException.conflict("An active grant already exists for this patient and user");
         }
 
         PatientAccessGrant grant = grantRepository.save(new PatientAccessGrant(
-                user.tenantId(), patient.getId(), grantee.getUserId(), user.userId(),
+                patient.getId(), grantee.getUserId(), user.userId(),
                 request.reason().trim(), now, request.validUntil()));
         AccessPerson actor = currentActor(user);
         auditRepository.save(new AccessAuditEvent(
-                user.tenantId(), user.userId(), actor.getDisplayName(), "创建患者授权", "PATIENT_GRANT",
+                user.userId(), actor.getDisplayName(), "创建患者授权", "PATIENT_GRANT",
                 patient.getName() + " → " + grantee.getDisplayName(), now));
         Map<Long, AccessPerson> people = new HashMap<>();
         people.put(grantee.getUserId(), grantee);
@@ -127,7 +132,7 @@ public class AccessManagementService {
     public AccessManagementResponse.GrantSummary revokeGrant(long grantId) {
         UserContext user = currentUserProvider.requireCurrentUser();
         requireAdministrator(user);
-        PatientAccessGrant grant = grantRepository.findByIdAndTenantId(grantId, user.tenantId())
+        PatientAccessGrant grant = grantRepository.findById(grantId)
                 .orElseThrow(() -> BusinessException.notFound("Patient grant"));
         if (grant.getRevokedAt() != null) {
             throw BusinessException.conflict("Patient grant has already been revoked");
@@ -135,14 +140,14 @@ public class AccessManagementService {
         Instant now = Instant.now();
         grant.revoke(now);
         Patient patient = patientRepository
-                .findByIdAndTenantIdAndDeletedFalse(grant.getPatientId(), user.tenantId())
+                .findByIdAndDeletedFalse(grant.getPatientId())
                 .orElseThrow(() -> BusinessException.notFound("Patient"));
         AccessPerson grantee = personRepository
-                .findByTenantIdAndUserId(user.tenantId(), grant.getGranteeUserId())
+                .findByUserId(grant.getGranteeUserId())
                 .orElseThrow(() -> BusinessException.notFound("Grantee"));
         AccessPerson actor = currentActor(user);
         auditRepository.save(new AccessAuditEvent(
-                user.tenantId(), user.userId(), actor.getDisplayName(), "撤销患者授权", "PATIENT_GRANT",
+                user.userId(), actor.getDisplayName(), "撤销患者授权", "PATIENT_GRANT",
                 patient.getName() + " → " + grantee.getDisplayName(), now));
         Map<Long, AccessPerson> people = new HashMap<>();
         people.put(grantee.getUserId(), grantee);
@@ -155,6 +160,30 @@ public class AccessManagementService {
         );
     }
 
+    @Transactional
+    public AccessManagementResponse.PatientSummary updatePatientAssignment(
+            long patientId,
+            UpdatePatientAssignmentRequest request
+    ) {
+        UserContext user = currentUserProvider.requireCurrentUser();
+        requireAdministrator(user);
+        Patient patient = patientRepository.findByIdAndDeletedFalse(patientId)
+                .orElseThrow(() -> BusinessException.notFound("Patient"));
+        var responsiblePerson = clinicalIdentityService
+                .resolvePatientAssignment(user, request.responsibleUserId());
+        patient.assignResponsiblePerson(responsiblePerson.userId(), responsiblePerson.departmentId());
+        patientRepository.saveAndFlush(patient);
+
+        AccessPerson actor = currentActor(user);
+        auditRepository.save(new AccessAuditEvent(
+                user.userId(), actor.getDisplayName(), "调整患者负责人", "PATIENT_ASSIGNMENT",
+                patient.getName() + " → " + responsiblePerson.displayName() + "（" + request.reason().trim() + "）",
+                Instant.now()));
+        return new AccessManagementResponse.PatientSummary(
+                patient.getId(), patient.getPatientNo(), patient.getName(), patient.getDepartmentId(),
+                patient.getOwnerId(), patient.getStatus().name());
+    }
+
     private void requireAdministrator(UserContext user) {
         if (!user.hasAllAccess()) {
             throw BusinessException.forbidden("Access management requires ALL data scope");
@@ -162,7 +191,7 @@ public class AccessManagementService {
     }
 
     private AccessPerson currentActor(UserContext user) {
-        return personRepository.findByTenantIdAndUserId(user.tenantId(), user.userId())
+        return personRepository.findByUserId(user.userId())
                 .filter(person -> "ACTIVE".equals(person.getStatus()))
                 .filter(person -> "SYSTEM_ADMIN".equals(person.getRoleCode()))
                 .orElseThrow(() -> BusinessException.forbidden("Current user is not an active access administrator"));

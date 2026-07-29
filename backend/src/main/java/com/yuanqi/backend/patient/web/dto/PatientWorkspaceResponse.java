@@ -6,7 +6,15 @@ import java.util.List;
 
 public record PatientWorkspaceResponse(
         PatientResponse patient,
+        ResponsiblePerson responsiblePerson,
         List<MedicalRecordResponse> medicalRecords,
         List<PrescriptionResponse> prescriptions
 ) {
+    public record ResponsiblePerson(
+            long userId,
+            String displayName,
+            String departmentName,
+            String roleCode
+    ) {
+    }
 }

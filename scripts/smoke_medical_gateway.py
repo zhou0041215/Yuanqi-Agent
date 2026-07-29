@@ -36,7 +36,6 @@ def main() -> None:
             "/api/v1/dev/token",
             json={
                 "userId": 1001,
-                "tenantId": 1,
                 "username": "admin",
                 "dataScope": "ALL",
                 "departmentIds": [10],
@@ -64,12 +63,8 @@ def main() -> None:
             "/api/v1/patients",
             headers={**headers, "Idempotency-Key": f"smoke-patient-{stamp}"},
             json={
-                "patientNo": f"SMOKE-P-{stamp}",
                 "name": "Medical gateway smoke patient",
                 "gender": "UNKNOWN",
-                "status": "ACTIVE",
-                "ownerId": 1001,
-                "departmentId": 10,
             },
         )
         patient.raise_for_status()
@@ -79,16 +74,11 @@ def main() -> None:
             "/api/v1/prescriptions",
             headers={**headers, "Idempotency-Key": f"smoke-rx-{stamp}"},
             json={
-                "prescriptionNo": f"SMOKE-RX-{stamp}",
                 "patientId": patient_id,
-                "doctorName": "Smoke Doctor",
                 "prescriptionDate": datetime.now().isoformat(timespec="seconds"),
                 "diagnosis": "Automated smoke test",
                 "drugsJson": "[]",
                 "totalAmount": 12.5,
-                "status": "PENDING",
-                "ownerId": 1001,
-                "departmentId": 10,
             },
         )
         prescription.raise_for_status()
@@ -199,11 +189,14 @@ def main() -> None:
             "/api/v1/agent/stream",
             json={
                 "message": "测试处方审批，不执行写入",
+                "patientContext": {
+                    "patientId": patient_id,
+                    "patientNo": "客户端伪造编号会被覆盖",
+                    "name": "客户端伪造姓名会被覆盖",
+                },
                 "toolCall": {
                     "name": "create_prescription",
                     "arguments": {
-                        "patientId": 1,
-                        "doctorName": "测试医生",
                         "diagnosis": "网关审批测试",
                         "drugs": "[]",
                         "totalAmount": 1,
@@ -214,15 +207,16 @@ def main() -> None:
         )
         approval.raise_for_status()
         approval_events = parse_sse(approval.text)
-        if not any(event == "approval" for event, _ in approval_events):
+        if not any(event == "uiData" for event, _ in approval_events):
             raise AssertionError(
                 f"approval event missing: status={approval.status_code}, body={approval.text!r}"
             )
         approval_payload = next(
             payload["uiData"]
             for event, payload in approval_events
-            if event == "approval"
+            if event == "uiData"
         )
+        assert approval_payload["targetParameters"]["patient_id"] == patient_id
 
         rejected = client.post(
             f"/api/v1/agent/threads/{approval_payload['threadId']}/resume/stream",
@@ -261,7 +255,6 @@ def main() -> None:
             "/api/v1/dev/token",
             json={
                 "userId": 1010,
-                "tenantId": 1,
                 "username": "yu_ming_demo",
                 "dataScope": "ALL",
                 "departmentIds": [10],

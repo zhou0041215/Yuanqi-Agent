@@ -1,12 +1,14 @@
 import hashlib
 import logging
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
 import orjson
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 
 from yuanqi_agent.errors import AgentError
 from yuanqi_agent.java_client import JavaApiClient
@@ -118,9 +120,12 @@ class CreatePatientArgs(StrictModel):
 class CreatePrescriptionArgs(StrictModel):
     patient_id: int = Field(gt=0, description="患者ID")
     record_id: int | None = Field(default=None, gt=0, description="关联病历ID")
-    doctor_name: str = Field(min_length=1, max_length=200)
     diagnosis: str = Field(min_length=1, max_length=2000, description="诊断结果")
-    drugs: str = Field(min_length=1, max_length=5000, description="药物列表，JSON数组格式")
+    drugs: str = Field(
+        min_length=1,
+        max_length=5000,
+        description="药品名称、规格、剂量和用法文本",
+    )
     total_amount: float = Field(gt=0, description="Total prescription amount.")
     notes: str | None = Field(default=None, max_length=2000)
 
@@ -138,12 +143,21 @@ class GetMedicalRecordArgs(StrictModel):
 class CreateMedicalRecordArgs(StrictModel):
     patient_id: int = Field(gt=0)
     visit_date: str = Field(description="就诊时间，ISO-8601 格式")
-    department: str = Field(min_length=1, max_length=100)
-    doctor_name: str = Field(min_length=1, max_length=100)
     chief_complaint: str | None = Field(default=None, max_length=10_000)
     diagnosis: str | None = Field(default=None, max_length=10_000)
     treatment_plan: str | None = Field(default=None, max_length=10_000)
     notes: str | None = Field(default=None, max_length=10_000)
+
+    @field_validator("visit_date")
+    @classmethod
+    def normalize_visit_date(cls, value: str) -> str:
+        try:
+            parsed = datetime.fromisoformat(value.strip())
+        except ValueError as exc:
+            raise ValueError("visit_date must be an ISO-8601 local date or date-time") from exc
+        if parsed.tzinfo is not None:
+            raise ValueError("visit_date must not include a timezone offset")
+        return parsed.isoformat(timespec="seconds")
 
 
 class ListPrescriptionsArgs(StrictModel):
@@ -168,6 +182,7 @@ class ToolDefinition:
     required_permission: str | None
     args_model: type[StrictModel]
     executor: ToolExecutor
+    planner_hidden_fields: frozenset[str] = frozenset()
 
 
 class ToolRegistry:
@@ -222,7 +237,7 @@ class ToolRegistry:
             ),
             ToolDefinition(
                 "create_patient",
-                "Medical operation.",
+                "创建患者",
                 ToolAccess.WRITE,
                 "high",
                 "patient:write",
@@ -231,12 +246,13 @@ class ToolRegistry:
             ),
             ToolDefinition(
                 "create_prescription",
-                "Medical operation.",
+                "为当前患者工作台中已验证的患者创建处方；患者身份由系统绑定",
                 ToolAccess.WRITE,
                 "critical",
                 "prescription:write",
                 CreatePrescriptionArgs,
                 self._create_prescription,
+                frozenset({"patientId"}),
             ),
             ToolDefinition(
                 "list_medical_records",
@@ -258,12 +274,13 @@ class ToolRegistry:
             ),
             ToolDefinition(
                 "create_medical_record",
-                "Medical operation.",
+                "为当前患者工作台中已验证的患者创建病历；患者身份由系统绑定",
                 ToolAccess.WRITE,
                 "high",
                 "medical-record:write",
                 CreateMedicalRecordArgs,
                 self._create_medical_record,
+                frozenset({"patientId"}),
             ),
             ToolDefinition(
                 "list_prescriptions",
@@ -401,13 +418,29 @@ class ToolRegistry:
                 "access": definition.access.value,
                 "riskLevel": definition.risk_level,
                 "requiredPermission": definition.required_permission,
-                "inputSchema": definition.args_model.model_json_schema(by_alias=True),
+                "inputSchema": self._planner_schema(definition),
             }
             for definition in self._definitions.values()
             if permissions is None
             or definition.required_permission is None
             or definition.required_permission in permissions
         ]
+
+    def _planner_schema(self, definition: ToolDefinition) -> dict[str, Any]:
+        schema = deepcopy(definition.args_model.model_json_schema(by_alias=True))
+        if not definition.planner_hidden_fields:
+            return schema
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            for field in definition.planner_hidden_fields:
+                properties.pop(field, None)
+        required = schema.get("required")
+        if isinstance(required, list):
+            schema["required"] = [
+                field for field in required
+                if field not in definition.planner_hidden_fields
+            ]
+        return schema
 
     # ── 医学实体识别 ────────────────────────────────────────────────────
     #
@@ -518,16 +551,9 @@ class ToolRegistry:
                 "GraphRAG is not enabled",
                 status_code=503,
             )
-        if runtime.tenant_id is None:
-            raise AgentError(
-                "TENANT_CONTEXT_REQUIRED",
-                "Knowledge retrieval requires a verified tenant context",
-                status_code=403,
-            )
         args = SearchKnowledgeArgs.model_validate(raw.model_dump())
         result = await self._knowledge.search(
             args.query,
-            runtime.tenant_id,
             args.top_k or self._knowledge_top_k,
         )
         return result.model_dump(mode="json", by_alias=True)
@@ -547,14 +573,9 @@ class ToolRegistry:
 
     async def _create_patient(self, raw: StrictModel, runtime: RequestRuntime) -> Any:
         args = CreatePatientArgs.model_validate(raw.model_dump())
-        import time
-        patient_no = f"P{int(time.time() * 1000)}"
         payload: dict[str, Any] = {
-            "patientNo": patient_no,
             "name": args.name,
             "gender": args.gender,
-            "ownerId": runtime.user_id,
-            "departmentId": runtime.department_id,
         }
         if args.birth_date:
             payload["birthDate"] = args.birth_date
@@ -574,20 +595,12 @@ class ToolRegistry:
 
     async def _create_prescription(self, raw: StrictModel, runtime: RequestRuntime) -> Any:
         args = CreatePrescriptionArgs.model_validate(raw.model_dump())
-        import time
-        prescription_no = f"RX{int(time.time() * 1000)}"
-        from datetime import datetime
         payload: dict[str, Any] = {
-            "prescriptionNo": prescription_no,
             "patientId": args.patient_id,
-            "doctorName": args.doctor_name,
             "prescriptionDate": datetime.now().isoformat(),
             "diagnosis": args.diagnosis,
             "drugsJson": args.drugs,
             "totalAmount": args.total_amount,
-            "status": "PENDING",
-            "ownerId": runtime.user_id,
-            "departmentId": runtime.department_id,
         }
         if args.record_id:
             payload["recordId"] = args.record_id
@@ -614,16 +627,9 @@ class ToolRegistry:
 
     async def _create_medical_record(self, raw: StrictModel, runtime: RequestRuntime) -> Any:
         args = CreateMedicalRecordArgs.model_validate(raw.model_dump())
-        import time
         payload: dict[str, Any] = {
-            "recordNo": f"MR{int(time.time() * 1000)}",
             "patientId": args.patient_id,
             "visitDate": args.visit_date,
-            "department": args.department,
-            "doctorName": args.doctor_name,
-            "status": "ACTIVE",
-            "ownerId": runtime.user_id,
-            "departmentId": runtime.department_id,
         }
         for key, value in {
             "chiefComplaint": args.chief_complaint,

@@ -43,8 +43,7 @@ public class ConversationSessionController {
     public ApiResponse<List<Response>> list() {
         UserContext user = users.requireCurrentUser();
         return ApiResponse.success(repository
-                .findTop50ByTenantIdAndOwnerUserIdOrderByUpdatedAtDesc(
-                        user.tenantId(), user.userId())
+                .findTop50ByOwnerUserIdOrderByUpdatedAtDesc(user.userId())
                 .stream().map(this::response).toList());
     }
 
@@ -60,9 +59,9 @@ public class ConversationSessionController {
             throw BusinessException.conflict("Conversation is too large to synchronize");
         }
         ConversationSession session = repository
-                .findByIdAndTenantIdAndOwnerUserId(id, user.tenantId(), user.userId())
+                .findByIdAndOwnerUserId(id, user.userId())
                 .orElseGet(() -> new ConversationSession(
-                        id, user.tenantId(), user.userId(), request.title(), turns,
+                        id, user.userId(), request.title(), turns,
                         request.favorite(), request.archived(),
                         Instant.ofEpochMilli(request.createdAt())));
         session.update(
@@ -75,7 +74,7 @@ public class ConversationSessionController {
     public ApiResponse<Void> delete(@PathVariable String id) {
         UserContext user = users.requireCurrentUser();
         ConversationSession session = repository
-                .findByIdAndTenantIdAndOwnerUserId(id, user.tenantId(), user.userId())
+                .findByIdAndOwnerUserId(id, user.userId())
                 .orElseThrow(() -> BusinessException.notFound("Conversation"));
         repository.delete(session);
         return ApiResponse.success(null);

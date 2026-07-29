@@ -49,7 +49,6 @@ public class DevTokenController {
                 .issuedAt(issuedAt)
                 .expiresAt(expiresAt)
                 .subject(Long.toString(request.userId()))
-                .claim("tenant_id", request.tenantId())
                 .claim("preferred_username", request.username())
                 .claim("data_scope", request.dataScope().name())
                 .claim("department_ids", request.departmentIds())
@@ -62,7 +61,6 @@ public class DevTokenController {
 
     public record TokenRequest(
             @Positive long userId,
-            @Positive long tenantId,
             @NotBlank String username,
             @NotNull DataScopeType dataScope,
             @NotNull Set<@Positive Long> departmentIds,
